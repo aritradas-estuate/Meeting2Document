@@ -52,7 +52,7 @@ function ProjectDetail() {
   const [isRestoring, setIsRestoring] = useState(false);
 
   const projectIdNum = parseInt(projectId, 10);
-  const isArchived = project?.status === "ARCHIVED";
+  const isArchived = project?.status?.toUpperCase() === "ARCHIVED";
 
   // Check auth on mount
   useEffect(() => {
