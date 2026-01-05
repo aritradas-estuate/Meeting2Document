@@ -8,12 +8,14 @@ from fastapi import APIRouter
 from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession, Pagination, require_project_access
+from app.config import settings
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.models.job import JobStatus, ProcessingJob
 from app.models.project import Project, ProjectStatus
 from app.schemas.base import MessageResponse, PaginatedResponse
 from app.schemas.job import JobCreate, JobProgress, JobResponse, JobWithResults
+from workers.celery_app import celery_app
 
 logger = get_logger(__name__)
 
@@ -40,9 +42,16 @@ async def create_job(
 
     require_project_access(project.user_id, current_user)
 
-    # Validate video files
     if not job_in.video_files:
         raise ValidationError(message="At least one video file is required")
+
+    max_size_bytes = settings.max_file_size_mb * 1024 * 1024
+    oversized_files = [f.name for f in job_in.video_files if f.size and f.size > max_size_bytes]
+    if oversized_files:
+        raise ValidationError(
+            message=f"Files exceed {settings.max_file_size_mb}MB limit: {', '.join(oversized_files)}. "
+            "Please compress these files before processing."
+        )
 
     # Create job
     job = ProcessingJob(
@@ -60,10 +69,15 @@ async def create_job(
     # Update project status
     project.status = ProjectStatus.PROCESSING
 
+    await db.commit()
+
     logger.info("Created processing job", job_id=job.id, project_id=project.id)
 
-    # TODO: Queue job for processing with Celery
-    # celery_app.send_task("process_job", args=[job.id])
+    celery_app.send_task(
+        "workers.tasks.process_job.process_job",
+        args=[job.id],
+        queue="processing",
+    )
 
     return JobResponse.model_validate(job)
 
@@ -213,10 +227,15 @@ async def retry_job(
     # Update project status
     job.project.status = ProjectStatus.PROCESSING
 
+    await db.commit()
+
     logger.info("Retrying job", job_id=job.id)
 
-    # TODO: Queue job for processing
-    # celery_app.send_task("process_job", args=[job.id])
+    celery_app.send_task(
+        "workers.tasks.process_job.process_job",
+        args=[job.id],
+        queue="processing",
+    )
 
     return JobResponse.model_validate(job)
 

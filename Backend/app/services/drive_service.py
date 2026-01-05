@@ -419,16 +419,6 @@ class DriveService:
         file_id: str,
         drive_id: str | None = None,
     ) -> dict:
-        """
-        Get metadata for a file.
-
-        Args:
-            file_id: The Google Drive file ID
-            drive_id: Optional Shared Drive ID
-
-        Returns:
-            Dictionary with file metadata
-        """
         service = await self.get_service()
 
         params: dict = {
@@ -440,6 +430,62 @@ class DriveService:
             params["supportsAllDrives"] = True
 
         return service.files().get(**params).execute()
+
+    async def make_file_public(self, file_id: str) -> str:
+        service = await self.get_service()
+
+        try:
+            permission = {
+                "type": "anyone",
+                "role": "reader",
+            }
+
+            service.permissions().create(
+                fileId=file_id,
+                body=permission,
+                supportsAllDrives=True,
+            ).execute()
+
+            download_url = f"https://drive.google.com/u/0/uc?id={file_id}&export=download"
+
+            logger.info("Made file temporarily public", file_id=file_id)
+            return download_url
+
+        except Exception as e:
+            logger.exception("Failed to make file public", file_id=file_id, error=str(e))
+            raise DriveAccessError(
+                message=f"Failed to make file public: {file_id}",
+                details={"error": str(e)},
+            )
+
+    async def revoke_public_access(self, file_id: str) -> None:
+        service = await self.get_service()
+
+        try:
+            permissions = (
+                service.permissions()
+                .list(
+                    fileId=file_id,
+                    supportsAllDrives=True,
+                )
+                .execute()
+            )
+
+            for perm in permissions.get("permissions", []):
+                if perm.get("type") == "anyone":
+                    service.permissions().delete(
+                        fileId=file_id,
+                        permissionId=perm["id"],
+                        supportsAllDrives=True,
+                    ).execute()
+                    logger.info("Revoked public access", file_id=file_id, permission_id=perm["id"])
+
+        except Exception as e:
+            logger.exception("Failed to revoke public access", file_id=file_id, error=str(e))
+            raise DriveAccessError(
+                message=f"Failed to revoke public access: {file_id}",
+                details={"error": str(e)},
+            )
 
 
 async def get_drive_service(user: User, db: AsyncSession | None = None) -> DriveService:

@@ -2,12 +2,14 @@
 Main processing job task.
 
 This task orchestrates the entire document generation pipeline:
-1. Download video files from Google Drive
-2. Extract information (transcription + video analysis)
-3. Synthesize information from all sources
-4. Generate document sections with writer/reviewer loop
-5. Assemble final document
-6. Upload to Google Drive (optional)
+1. Make files temporarily public on Google Drive
+2. Extract information (transcription via AssemblyAI + extraction via GPT-5.2)
+3. Synthesize information from all sources (Phase IV)
+4. Generate document sections with writer/reviewer loop (Phase IV)
+5. Assemble final document (Phase IV)
+6. Upload to Google Drive (optional) (Phase IV)
+
+Phase III implements steps 1-2 only (extraction pipeline).
 """
 
 import asyncio
@@ -17,14 +19,21 @@ from typing import Any
 from celery import shared_task
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.core.logging import get_logger
 from app.db.database import AsyncSessionLocal
 from app.models.job import JobStatus, ProcessingJob
 from app.models.project import Project, ProjectStatus
+from app.services.drive_service import DriveService
+from workers.ai_pipeline.extraction.transcription import TranscriptionService
+from workers.ai_pipeline.extraction.information_extractor import InformationExtractor
 
 logger = get_logger(__name__)
+
+# File size limit for direct URL transcription (100MB)
+MAX_DIRECT_URL_SIZE = 100 * 1024 * 1024
 
 
 async def update_job_status(
@@ -34,8 +43,8 @@ async def update_job_status(
     current_stage: str | None = None,
     stage_progress: dict[str, Any] | None = None,
     error_message: str | None = None,
+    extraction_result: dict[str, Any] | None = None,
 ) -> ProcessingJob:
-    """Update job status in the database."""
     result = await session.execute(select(ProcessingJob).where(ProcessingJob.id == job_id))
     job = result.scalar_one()
 
@@ -46,6 +55,8 @@ async def update_job_status(
         job.stage_progress = {**job.stage_progress, **stage_progress}
     if error_message is not None:
         job.error_message = error_message
+    if extraction_result is not None:
+        job.extraction_result = extraction_result
 
     if status == JobStatus.PENDING:
         job.started_at = None
@@ -57,186 +68,190 @@ async def update_job_status(
     return job
 
 
-async def process_job_async(job_id: int) -> dict[str, Any]:
-    """
-    Async implementation of the job processing pipeline.
+async def process_single_file(
+    file_info: dict[str, Any],
+    drive_service: DriveService,
+    transcription_service: TranscriptionService,
+    extractor: InformationExtractor,
+    session: AsyncSession,
+    job_id: int,
+    file_index: int,
+    total_files: int,
+) -> dict[str, Any]:
+    file_id = file_info["id"]
+    file_name = file_info.get("name", "Unknown")
+    file_size = file_info.get("size", 0)
 
-    This is the main entry point for processing a job.
-    """
+    logger.info("Processing file", file_id=file_id, file_name=file_name, file_size=file_size)
+
+    if file_size > MAX_DIRECT_URL_SIZE:
+        raise ValueError(f"File {file_name} exceeds 100MB limit. Please compress and re-upload.")
+
+    def update_progress(progress: int, message: str) -> None:
+        base_progress = (file_index / total_files) * 100
+        file_contribution = (1 / total_files) * progress
+        total_progress = base_progress + file_contribution
+        logger.debug(
+            "File progress",
+            file_name=file_name,
+            progress=progress,
+            message=message,
+            total_progress=total_progress,
+        )
+
+    try:
+        update_progress(0, "Making file temporarily public...")
+        download_url = await drive_service.make_file_public(file_id)
+
+        update_progress(5, "Starting transcription...")
+        transcription_result = await transcription_service.transcribe_from_url(
+            download_url,
+            progress_callback=lambda p, m: update_progress(5 + int(p * 0.6), m),
+        )
+
+        update_progress(70, "Revoking public access...")
+        await drive_service.revoke_public_access(file_id)
+
+        update_progress(75, "Extracting key information...")
+        extraction_result = await extractor.extract_from_transcript(
+            transcription_result.text,
+            file_name=file_name,
+        )
+
+        update_progress(100, "Complete")
+
+        return {
+            "file_id": file_id,
+            "file_name": file_name,
+            "file_size": file_size,
+            "status": "completed",
+            "transcription": transcription_service.to_dict(transcription_result),
+            "extraction": extractor.to_dict(extraction_result),
+        }
+
+    except Exception as e:
+        logger.exception("Failed to process file", file_id=file_id, error=str(e))
+
+        try:
+            await drive_service.revoke_public_access(file_id)
+        except Exception:
+            pass
+
+        return {
+            "file_id": file_id,
+            "file_name": file_name,
+            "file_size": file_size,
+            "status": "failed",
+            "error": str(e),
+        }
+
+
+async def process_job_async(job_id: int) -> dict[str, Any]:
     logger.info("Starting job processing", job_id=job_id)
 
     async with AsyncSessionLocal() as session:
-        # Get job and project
-        result = await session.execute(select(ProcessingJob).where(ProcessingJob.id == job_id))
+        result = await session.execute(
+            select(ProcessingJob)
+            .options(selectinload(ProcessingJob.project).selectinload(Project.user))
+            .where(ProcessingJob.id == job_id)
+        )
         job = result.scalar_one_or_none()
 
         if not job:
             logger.error("Job not found", job_id=job_id)
             raise ValueError(f"Job {job_id} not found")
 
+        user = job.project.user
+        if not user or not user.access_token:
+            raise ValueError("User not found or missing Google credentials")
+
         try:
-            # Mark job as started
-            job.status = JobStatus.DOWNLOADING
+            job.status = JobStatus.EXTRACTING
             job.started_at = datetime.now(timezone.utc)
-            job.current_stage = "downloading"
+            job.current_stage = "extracting"
             await session.commit()
 
-            # Stage 1: Download video files from Google Drive
-            logger.info("Stage 1: Downloading files", job_id=job_id)
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.DOWNLOADING,
-                current_stage="downloading",
-                stage_progress={"downloading": {"status": "in_progress", "progress": 0}},
+            drive_service = DriveService(user, session)
+            transcription_service = TranscriptionService()
+            extractor = InformationExtractor()
+
+            extraction_results: dict[str, Any] = {
+                "files": [],
+                "supporting_documents": [],
+                "metadata": {
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                    "models_used": {
+                        "transcription": "assemblyai",
+                        "extraction": settings.model_extraction,
+                    },
+                },
+            }
+
+            video_files = job.video_files or []
+            total_files = len(video_files)
+
+            logger.info("Processing video files", job_id=job_id, total_files=total_files)
+
+            for idx, file_info in enumerate(video_files):
+                file_name = file_info.get("name", "Unknown")
+
+                await update_job_status(
+                    session,
+                    job_id,
+                    JobStatus.EXTRACTING,
+                    stage_progress={
+                        "extracting": {
+                            "status": "in_progress",
+                            "progress": int((idx / total_files) * 100),
+                            "current_file": file_name,
+                            "files_completed": idx,
+                            "total_files": total_files,
+                        }
+                    },
+                )
+
+                file_result = await process_single_file(
+                    file_info=file_info,
+                    drive_service=drive_service,
+                    transcription_service=transcription_service,
+                    extractor=extractor,
+                    session=session,
+                    job_id=job_id,
+                    file_index=idx,
+                    total_files=total_files,
+                )
+
+                extraction_results["files"].append(file_result)
+
+            extraction_results["metadata"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+            extraction_results["metadata"]["total_files_processed"] = total_files
+
+            successful_files = sum(
+                1 for f in extraction_results["files"] if f["status"] == "completed"
             )
+            failed_files = total_files - successful_files
 
-            # TODO: Implement file download from Google Drive
-            # downloaded_files = await download_files(job.video_files, job.supporting_files)
+            if failed_files == total_files:
+                raise ValueError("All files failed to process")
 
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.DOWNLOADING,
-                stage_progress={"downloading": {"status": "completed", "progress": 100}},
-            )
-
-            # Stage 2: Extract information (transcription + video analysis)
-            logger.info("Stage 2: Extracting information", job_id=job_id)
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.EXTRACTING,
-                current_stage="extracting",
-                stage_progress={"extracting": {"status": "in_progress", "progress": 0}},
-            )
-
-            # TODO: Implement extraction pipeline
-            # - AssemblyAI transcription
-            # - Gemini video analysis
-            # extraction_result = await extract_information(downloaded_files)
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.EXTRACTING,
-                stage_progress={"extracting": {"status": "completed", "progress": 100}},
-            )
-
-            # Stage 3: Synthesize information
-            logger.info("Stage 3: Synthesizing information", job_id=job_id)
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.SYNTHESIZING,
-                current_stage="synthesizing",
-                stage_progress={"synthesizing": {"status": "in_progress", "progress": 0}},
-            )
-
-            # TODO: Implement synthesis
-            # synthesis_result = await synthesize_information(extraction_result)
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.SYNTHESIZING,
-                stage_progress={"synthesizing": {"status": "completed", "progress": 100}},
-            )
-
-            # Stage 4: Generate document sections
-            logger.info("Stage 4: Generating sections", job_id=job_id)
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.GENERATING,
-                current_stage="generating",
-                stage_progress={"generating": {"status": "in_progress", "progress": 0}},
-            )
-
-            # TODO: Implement section generation with CrewAI
-            # - Writer agent generates sections
-            # - Reviewer agent reviews and provides feedback
-            # - Loop until approved or max iterations
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.GENERATING,
-                stage_progress={"generating": {"status": "completed", "progress": 100}},
-            )
-
-            # Stage 5: Review sections
-            logger.info("Stage 5: Reviewing sections", job_id=job_id)
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.REVIEWING,
-                current_stage="reviewing",
-                stage_progress={"reviewing": {"status": "in_progress", "progress": 0}},
-            )
-
-            # Review is part of the generation loop
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.REVIEWING,
-                stage_progress={"reviewing": {"status": "completed", "progress": 100}},
-            )
-
-            # Stage 6: Assemble final document
-            logger.info("Stage 6: Assembling document", job_id=job_id)
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.ASSEMBLING,
-                current_stage="assembling",
-                stage_progress={"assembling": {"status": "in_progress", "progress": 0}},
-            )
-
-            # TODO: Implement document assembly
-            # - Create Document record
-            # - Create DocumentSection records
-            # - Generate markdown content
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.ASSEMBLING,
-                stage_progress={"assembling": {"status": "completed", "progress": 100}},
-            )
-
-            # Stage 7: Upload to Google Drive (optional)
-            logger.info("Stage 7: Uploading document", job_id=job_id)
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.UPLOADING,
-                current_stage="uploading",
-                stage_progress={"uploading": {"status": "in_progress", "progress": 0}},
-            )
-
-            # TODO: Implement Google Drive upload
-            # - Convert markdown to Google Docs
-            # - Upload to project folder
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.UPLOADING,
-                stage_progress={"uploading": {"status": "completed", "progress": 100}},
-            )
-
-            # Mark job as completed
-            logger.info("Job completed successfully", job_id=job_id)
             await update_job_status(
                 session,
                 job_id,
                 JobStatus.COMPLETED,
                 current_stage="completed",
+                stage_progress={
+                    "extracting": {
+                        "status": "completed",
+                        "progress": 100,
+                        "files_completed": total_files,
+                        "total_files": total_files,
+                        "successful": successful_files,
+                        "failed": failed_files,
+                    }
+                },
+                extraction_result=extraction_results,
             )
 
-            # Update project status
             project_result = await session.execute(
                 select(Project).where(Project.id == job.project_id)
             )
@@ -244,10 +259,19 @@ async def process_job_async(job_id: int) -> dict[str, Any]:
             project.status = ProjectStatus.COMPLETED
             await session.commit()
 
+            logger.info(
+                "Job completed successfully",
+                job_id=job_id,
+                successful_files=successful_files,
+                failed_files=failed_files,
+            )
+
             return {
                 "status": "completed",
                 "job_id": job_id,
-                "message": "Document generated successfully",
+                "files_processed": total_files,
+                "successful": successful_files,
+                "failed": failed_files,
             }
 
         except Exception as e:
@@ -261,7 +285,6 @@ async def process_job_async(job_id: int) -> dict[str, Any]:
                 error_message=str(e),
             )
 
-            # Reset project status
             project_result = await session.execute(
                 select(Project).where(Project.id == job.project_id)
             )
@@ -281,13 +304,7 @@ async def process_job_async(job_id: int) -> dict[str, Any]:
     max_retries=3,
 )
 def process_job(self, job_id: int) -> dict[str, Any]:
-    """
-    Celery task to process a job.
-
-    This wraps the async implementation to run in the Celery worker.
-    """
     try:
-        # Run the async function in an event loop
         result = asyncio.run(process_job_async(job_id))
         return result
     except Exception as e:

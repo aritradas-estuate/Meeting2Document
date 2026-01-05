@@ -49,10 +49,11 @@ class Settings(BaseSettings):
     assemblyai_api_key: str = ""
 
     # AI Models (configurable)
-    model_video_analysis: str = "gemini-2.0-flash"
+    model_video_analysis: str = "gemini-3-flash"
     model_transcription: str = "best"
-    model_synthesis: str = "gpt-4o"
-    model_section_writer: str = "gpt-4o"
+    model_extraction: str = "gpt-5.2"
+    model_synthesis: str = "gpt-5.2"
+    model_section_writer: str = "gpt-5.2"
     model_section_reviewer: str = "claude-3-5-sonnet-20241022"
 
     # Processing
@@ -65,7 +66,7 @@ class Settings(BaseSettings):
 
     # File Storage
     temp_file_dir: str = "/tmp/meetingstodoc"
-    max_video_size_mb: int = 2000
+    max_file_size_mb: int = 100
 
     # Security
     secret_key: str = "change-this-in-production-use-a-secure-random-key"
