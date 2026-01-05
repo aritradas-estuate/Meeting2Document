@@ -36,13 +36,17 @@ export interface GoogleAuthURL {
 
 export type ProjectStatus = 'ACTIVE' | 'PROCESSING' | 'COMPLETED' | 'ARCHIVED';
 
+export interface DriveFolder {
+  id: string;
+  name: string;
+}
+
 export interface Project {
   id: number;
   user_id: number;
   name: string;
   description: string | null;
-  drive_folder_id: string | null;
-  drive_folder_name: string | null;
+  drive_folders: DriveFolder[] | null;
   schema_type: string;
   model_config: Record<string, unknown> | null;
   status: ProjectStatus;
@@ -53,14 +57,14 @@ export interface Project {
 export interface ProjectCreate {
   name: string;
   description?: string;
-  drive_folder_id?: string;
-  drive_folder_name?: string;
+  drive_folders?: DriveFolder[];
   schema_type?: string;
 }
 
 export interface ProjectUpdate {
   name?: string;
   description?: string;
+  drive_folders?: DriveFolder[];
   status?: ProjectStatus;
   model_config?: Record<string, unknown>;
 }

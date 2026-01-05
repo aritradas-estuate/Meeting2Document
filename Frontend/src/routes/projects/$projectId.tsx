@@ -10,9 +10,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/stores/auth";
-import { projectsApi, jobsApi, documentsApi } from "@/lib/api";
+import { projectsApi, jobsApi, documentsApi, driveApi } from "@/lib/api";
 import { DeleteConfirmationModal } from "@/components/delete-confirmation-modal";
-import type { Project, ProcessingJob, Document } from "@/types/api";
+import { DriveBrowser } from "@/components/drive/DriveBrowser";
+import type { Project, ProcessingJob, Document, DriveItem } from "@/types/api";
 import {
   ArrowLeft,
   Folder,
@@ -30,6 +31,13 @@ import {
   GoogleDriveLogo,
   Archive,
   ArrowCounterClockwise,
+  CaretRight,
+  CaretDown,
+  Plus,
+  X,
+  Video,
+  CheckSquare,
+  Square,
 } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/projects/$projectId")({
@@ -50,6 +58,13 @@ function ProjectDetail() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [folderFiles, setFolderFiles] = useState<Record<string, DriveItem[]>>({});
+  const [loadingFolders, setLoadingFolders] = useState<Set<string>>(new Set());
+  const [selectedFiles, setSelectedFiles] = useState<DriveItem[]>([]);
+  const [showAddFolder, setShowAddFolder] = useState(false);
+  const [isStartingProcessing, setIsStartingProcessing] = useState(false);
 
   const projectIdNum = parseInt(projectId, 10);
   const isArchived = project?.status?.toUpperCase() === "ARCHIVED";
@@ -100,7 +115,7 @@ function ProjectDetail() {
     setIsArchiving(true);
     try {
       await projectsApi.archive(project.id);
-      navigate({ to: "/dashboard" });
+      navigate({ to: "/dashboard", search: { tab: "ARCHIVED" } });
     } catch (err) {
       console.error("Failed to archive project:", err);
     } finally {
@@ -123,15 +138,141 @@ function ProjectDetail() {
 
   const handlePermanentDelete = async () => {
     if (!project) return;
+    const wasArchived = isArchived;
     setIsDeleting(true);
     try {
       await projectsApi.permanentDelete(project.id);
-      navigate({ to: "/dashboard" });
+      navigate({ to: "/dashboard", search: wasArchived ? { tab: "ARCHIVED" } : {} });
     } catch (err) {
       console.error("Failed to delete project:", err);
       setIsDeleting(false);
     }
   };
+
+  const loadFolderFiles = useCallback(async (folderId: string) => {
+    setLoadingFolders(prev => new Set(prev).add(folderId));
+    try {
+      const response = await driveApi.navigate(folderId);
+      setFolderFiles(prev => ({ ...prev, [folderId]: response.items }));
+    } catch (err) {
+      console.error("Failed to load folder files:", err);
+    } finally {
+      setLoadingFolders(prev => {
+        const next = new Set(prev);
+        next.delete(folderId);
+        return next;
+      });
+    }
+  }, []);
+
+  const toggleFolder = (folderId: string) => {
+    const newExpanded = new Set(expandedFolders);
+    if (newExpanded.has(folderId)) {
+      newExpanded.delete(folderId);
+    } else {
+      newExpanded.add(folderId);
+      if (!folderFiles[folderId]) {
+        loadFolderFiles(folderId);
+      }
+    }
+    setExpandedFolders(newExpanded);
+  };
+
+  const toggleFileSelection = (file: DriveItem) => {
+    if (selectedFiles.some(f => f.id === file.id)) {
+      setSelectedFiles(selectedFiles.filter(f => f.id !== file.id));
+    } else {
+      setSelectedFiles([...selectedFiles, file]);
+    }
+  };
+
+  const selectAllVideosInFolder = (folderId: string) => {
+    const files = folderFiles[folderId]?.filter(f => !f.is_folder && f.mime_type.includes("video")) || [];
+    const newSelected = [...selectedFiles];
+    files.forEach(file => {
+      if (!newSelected.some(f => f.id === file.id)) {
+        newSelected.push(file);
+      }
+    });
+    setSelectedFiles(newSelected);
+  };
+
+  const deselectAllInFolder = (folderId: string) => {
+    const folderFileIds = new Set(folderFiles[folderId]?.map(f => f.id) || []);
+    setSelectedFiles(selectedFiles.filter(f => !folderFileIds.has(f.id)));
+  };
+
+  const handleAddFolder = async (folder: DriveItem) => {
+    if (!project) return;
+    const existingFolders = project.drive_folders || [];
+    if (existingFolders.some(f => f.id === folder.id)) {
+      setShowAddFolder(false);
+      return;
+    }
+    const newFolders = [...existingFolders, { id: folder.id, name: folder.name }];
+    try {
+      const updated = await projectsApi.update(project.id, { drive_folders: newFolders });
+      setProject(updated);
+      setShowAddFolder(false);
+    } catch (err) {
+      console.error("Failed to add folder:", err);
+    }
+  };
+
+  const handleRemoveFolder = async (folderId: string) => {
+    if (!project) return;
+    const newFolders = (project.drive_folders || []).filter(f => f.id !== folderId);
+    try {
+      const updated = await projectsApi.update(project.id, { drive_folders: newFolders });
+      setProject(updated);
+      setSelectedFiles(selectedFiles.filter(f => !f.parents?.includes(folderId)));
+      setExpandedFolders(prev => {
+        const next = new Set(prev);
+        next.delete(folderId);
+        return next;
+      });
+    } catch (err) {
+      console.error("Failed to remove folder:", err);
+    }
+  };
+
+  const handleStartProcessing = async () => {
+    if (!project) return;
+    const videoFiles = selectedFiles.filter(f => f.mime_type.includes("video"));
+    if (videoFiles.length === 0) return;
+
+    setIsStartingProcessing(true);
+    try {
+      await jobsApi.create({
+        project_id: project.id,
+        video_files: videoFiles.map(f => ({
+          id: f.id,
+          name: f.name,
+          mime_type: f.mime_type,
+          size: f.size || undefined,
+          web_view_link: f.web_view_link || undefined,
+        })),
+      });
+      await loadProject();
+      setSelectedFiles([]);
+    } catch (err) {
+      console.error("Failed to start processing:", err);
+    } finally {
+      setIsStartingProcessing(false);
+    }
+  };
+
+  const getFileIcon = (file: DriveItem) => {
+    if (file.is_folder) {
+      return <Folder className="h-4 w-4 text-blue-500" weight="duotone" />;
+    }
+    if (file.mime_type.includes("video")) {
+      return <Video className="h-4 w-4 text-purple-500" weight="duotone" />;
+    }
+    return <File className="h-4 w-4 text-gray-500" weight="duotone" />;
+  };
+
+  const videoFileCount = selectedFiles.filter(f => f.mime_type.includes("video")).length;
 
   // Get job status badge
   const getJobStatusBadge = (status: ProcessingJob["status"]) => {
@@ -249,7 +390,7 @@ function ProjectDetail() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate({ to: "/dashboard" })}
+              onClick={() => navigate({ to: "/dashboard", search: isArchived ? { tab: "ARCHIVED" } : {} })}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
@@ -340,10 +481,10 @@ function ProjectDetail() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
-              {project.drive_folder_name && (
+              {project.drive_folders && project.drive_folders.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Folder className="h-4 w-4" />
-                  <span>{project.drive_folder_name}</span>
+                  <span>{project.drive_folders.length} folder{project.drive_folders.length > 1 ? 's' : ''}</span>
                 </div>
               )}
               <div className="flex items-center gap-2">
@@ -361,15 +502,176 @@ function ProjectDetail() {
         </Card>
 
         {!isArchived && (
-          <div className="flex items-center gap-4">
-            <Button disabled>
-              <Play className="h-4 w-4 mr-2" />
-              Start Processing
-            </Button>
-            <p className="text-sm text-muted-foreground">
-              Select video files from your connected Drive folder to process
-            </p>
-          </div>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Source Folders</CardTitle>
+                  <CardDescription>Select video files from these folders to process</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setShowAddFolder(!showAddFolder)}>
+                  {showAddFolder ? (
+                    <>
+                      <X className="h-4 w-4 mr-2" />
+                      Cancel
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Folder
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {showAddFolder && (
+                <div className="p-4 border rounded-lg bg-muted/30">
+                  <DriveBrowser
+                    onSelect={handleAddFolder}
+                    onSelectCurrentFolder={handleAddFolder}
+                    showOnlyFolders={true}
+                  />
+                </div>
+              )}
+
+              {(!project.drive_folders || project.drive_folders.length === 0) && !showAddFolder ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Folder className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No folders added yet</p>
+                  <p className="text-sm mt-1">Add a folder to select files for processing</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {project.drive_folders?.map((folder) => {
+                    const isExpanded = expandedFolders.has(folder.id);
+                    const isLoadingFolder = loadingFolders.has(folder.id);
+                    const files = folderFiles[folder.id] || [];
+                    const videoFiles = files.filter(f => f.mime_type.includes("video"));
+                    const selectedInFolder = files.filter(f => selectedFiles.some(sf => sf.id === f.id));
+
+                    return (
+                      <div key={folder.id} className="border rounded-lg overflow-hidden">
+                        <div className="flex items-center gap-2 p-3 bg-muted/30">
+                          <button
+                            onClick={() => toggleFolder(folder.id)}
+                            className="p-1 hover:bg-muted rounded"
+                          >
+                            {isExpanded ? (
+                              <CaretDown className="h-4 w-4" />
+                            ) : (
+                              <CaretRight className="h-4 w-4" />
+                            )}
+                          </button>
+                          <Folder className="h-5 w-5 text-primary" weight="duotone" />
+                          <span className="font-medium flex-1">{folder.name}</span>
+                          {isExpanded && videoFiles.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => {
+                                if (selectedInFolder.length === videoFiles.length) {
+                                  deselectAllInFolder(folder.id);
+                                } else {
+                                  selectAllVideosInFolder(folder.id);
+                                }
+                              }}
+                            >
+                              {selectedInFolder.length === videoFiles.length ? "Deselect All" : "Select All Videos"}
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => handleRemoveFolder(folder.id)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="border-t">
+                            {isLoadingFolder ? (
+                              <div className="flex items-center justify-center py-8">
+                                <SpinnerGap className="h-6 w-6 animate-spin text-muted-foreground" />
+                              </div>
+                            ) : files.length === 0 ? (
+                              <div className="text-center py-6 text-muted-foreground text-sm">
+                                This folder is empty
+                              </div>
+                            ) : (
+                              <div className="divide-y max-h-64 overflow-y-auto">
+                                {files.map((file) => {
+                                  const isSelected = selectedFiles.some(f => f.id === file.id);
+                                  const isVideo = file.mime_type.includes("video");
+
+                                  return (
+                                    <div
+                                      key={file.id}
+                                      className={`flex items-center gap-3 px-4 py-2 ${
+                                        isVideo ? "hover:bg-muted/50 cursor-pointer" : "opacity-60"
+                                      } ${isSelected ? "bg-primary/10" : ""}`}
+                                      onClick={() => isVideo && toggleFileSelection(file)}
+                                    >
+                                      {isVideo ? (
+                                        isSelected ? (
+                                          <CheckSquare className="h-4 w-4 text-primary" weight="fill" />
+                                        ) : (
+                                          <Square className="h-4 w-4 text-muted-foreground" />
+                                        )
+                                      ) : (
+                                        <div className="w-4" />
+                                      )}
+                                      {getFileIcon(file)}
+                                      <span className="flex-1 text-sm truncate">{file.name}</span>
+                                      {!file.is_folder && file.size && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {(file.size / 1024 / 1024).toFixed(1)} MB
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {(project.drive_folders?.length ?? 0) > 0 && (
+                <div className="flex items-center gap-4 pt-4 border-t">
+                  <Button
+                    onClick={handleStartProcessing}
+                    disabled={videoFileCount === 0 || isStartingProcessing}
+                  >
+                    {isStartingProcessing ? (
+                      <>
+                        <SpinnerGap className="h-4 w-4 mr-2 animate-spin" />
+                        Starting...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        {videoFileCount === 0
+                          ? "Select videos to process"
+                          : `Process ${videoFileCount} video${videoFileCount > 1 ? "s" : ""}`}
+                      </>
+                    )}
+                  </Button>
+                  {selectedFiles.length > 0 && (
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedFiles([])}>
+                      Clear Selection
+                    </Button>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {/* Jobs Section */}

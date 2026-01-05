@@ -13,7 +13,7 @@ import {
   ArrowLeft, 
   FileText,
   Folder,
-  Check
+  X
 } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/projects/new")({
@@ -26,7 +26,7 @@ function NewProject() {
   
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [selectedFolder, setSelectedFolder] = useState<DriveItem | null>(null);
+  const [selectedFolders, setSelectedFolders] = useState<DriveItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<"details" | "folder">("details");
 
@@ -43,8 +43,9 @@ function NewProject() {
       const project = await projectsApi.create({
         name: name.trim(),
         description: description.trim() || undefined,
-        drive_folder_id: selectedFolder?.id,
-        drive_folder_name: selectedFolder?.name,
+        drive_folders: selectedFolders.length > 0 
+          ? selectedFolders.map(f => ({ id: f.id, name: f.name }))
+          : undefined,
       });
       
       navigate({ to: `/projects/${project.id}` });
@@ -56,9 +57,17 @@ function NewProject() {
   };
 
   const handleFolderSelect = (item: DriveItem) => {
-    if (item.is_folder) {
-      setSelectedFolder(item);
+    if (!item.is_folder) return;
+    
+    if (selectedFolders.some(f => f.id === item.id)) {
+      setSelectedFolders(selectedFolders.filter(f => f.id !== item.id));
+    } else {
+      setSelectedFolders([...selectedFolders, item]);
     }
+  };
+
+  const handleRemoveFolder = (folderId: string) => {
+    setSelectedFolders(selectedFolders.filter(f => f.id !== folderId));
   };
 
   return (
@@ -124,30 +133,35 @@ function NewProject() {
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Select Google Drive Folder</CardTitle>
+                <CardTitle>Select Google Drive Folders</CardTitle>
                 <CardDescription>
-                  Choose a folder containing your meeting recordings (optional)
+                  Choose folders containing your meeting recordings (optional)
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {selectedFolder ? (
-                  <div className="flex items-center gap-3 p-3 bg-muted rounded-lg mb-4">
-                    <Folder className="h-5 w-5 text-primary" weight="duotone" />
-                    <span className="font-medium">{selectedFolder.name}</span>
-                    <Check className="h-5 w-5 text-green-500 ml-auto" />
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={() => setSelectedFolder(null)}
-                    >
-                      Change
-                    </Button>
+                {selectedFolders.length > 0 && (
+                  <div className="space-y-2 mb-4">
+                    <p className="text-sm font-medium text-muted-foreground">Selected Folders:</p>
+                    {selectedFolders.map((folder) => (
+                      <div key={folder.id} className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                        <Folder className="h-5 w-5 text-primary" weight="duotone" />
+                        <span className="font-medium flex-1">{folder.name}</span>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleRemoveFolder(folder.id)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                ) : null}
+                )}
                 
                 <DriveBrowser 
                   onSelect={handleFolderSelect}
-                  selectedId={selectedFolder?.id}
+                  onSelectCurrentFolder={handleFolderSelect}
+                  selectedIds={selectedFolders.map(f => f.id)}
                   showOnlyFolders={false}
                 />
               </CardContent>
@@ -158,21 +172,12 @@ function NewProject() {
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>
-              <div className="flex gap-3">
-                <Button 
-                  variant="outline" 
-                  onClick={handleSubmit}
-                  disabled={isSubmitting}
-                >
-                  Skip & Create
-                </Button>
-                <Button 
-                  onClick={handleSubmit}
-                  disabled={isSubmitting || !selectedFolder}
-                >
-                  {isSubmitting ? "Creating..." : "Create Project"}
-                </Button>
-              </div>
+              <Button 
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Creating..." : selectedFolders.length === 0 ? "Create Without Folders" : `Create Project (${selectedFolders.length} folder${selectedFolders.length > 1 ? 's' : ''})`}
+              </Button>
             </div>
           </div>
         )}

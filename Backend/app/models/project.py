@@ -31,8 +31,9 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    drive_folder_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    drive_folder_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    drive_folders: Mapped[list[dict[str, str]] | None] = mapped_column(
+        JSONB, nullable=True, default=list
+    )
 
     schema_type: Mapped[str] = mapped_column(String, default="zuora_q2r")
     model_config_json: Mapped[dict[str, Any] | None] = mapped_column(

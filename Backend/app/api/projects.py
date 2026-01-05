@@ -26,12 +26,15 @@ async def create_project(
     project_in: ProjectCreate,
 ) -> ProjectResponse:
     """Create a new project."""
+    drive_folders_data = None
+    if project_in.drive_folders:
+        drive_folders_data = [f.model_dump() for f in project_in.drive_folders]
+
     project = Project(
         user_id=current_user.id,
         name=project_in.name,
         description=project_in.description,
-        drive_folder_id=project_in.drive_folder_id,
-        drive_folder_name=project_in.drive_folder_name,
+        drive_folders=drive_folders_data,
         schema_type=project_in.schema_type,
         model_config_json=project_in.model_config_json,
     )
@@ -47,14 +50,19 @@ async def list_projects(
     db: DbSession,
     current_user: CurrentUser,
     pagination: Pagination,
-    status: ProjectStatus | None = None,
+    status: str | None = None,
 ) -> PaginatedResponse[ProjectResponse]:
-    """List all projects for the current user."""
-    # Build query
     query = select(Project).where(Project.user_id == current_user.id)
 
     if status:
-        query = query.filter(Project.status == status)
+        status_list = [s.strip().upper() for s in status.split(",")]
+        valid_statuses = [
+            ProjectStatus(s.lower())
+            for s in status_list
+            if s.lower() in [e.value for e in ProjectStatus]
+        ]
+        if valid_statuses:
+            query = query.filter(Project.status.in_(valid_statuses))
 
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
@@ -138,8 +146,13 @@ async def update_project(
 
     require_project_access(project.user_id, current_user)
 
-    # Update fields
     update_data = project_in.model_dump(exclude_unset=True)
+
+    if "drive_folders" in update_data and update_data["drive_folders"] is not None:
+        update_data["drive_folders"] = [
+            f if isinstance(f, dict) else f.model_dump() for f in update_data["drive_folders"]
+        ]
+
     for field, value in update_data.items():
         setattr(project, field, value)
 

@@ -15,20 +15,28 @@ import {
   SignOut,
   User,
   Archive,
+  CircleNotch,
 } from "@phosphor-icons/react";
+
+type TabStatus = "ACTIVE" | "PROCESSING" | "ARCHIVED";
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
+  validateSearch: (search: Record<string, unknown>): { tab?: TabStatus } => {
+    const tab = search.tab as string | undefined;
+    if (tab?.toUpperCase() === "ARCHIVED") return { tab: "ARCHIVED" };
+    if (tab?.toUpperCase() === "PROCESSING") return { tab: "PROCESSING" };
+    return { tab: "ACTIVE" };
+  },
 });
-
-type TabStatus = "ACTIVE" | "ARCHIVED";
 
 function Dashboard() {
   const navigate = useNavigate();
+  const { tab } = Route.useSearch();
   const { user, isAuthenticated, logout, checkAuth } = useAuthStore();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabStatus>("ACTIVE");
+  const [activeTab, setActiveTab] = useState<TabStatus>(tab || "ACTIVE");
 
   useEffect(() => {
     checkAuth();
@@ -46,10 +54,18 @@ function Dashboard() {
     }
   }, [isAuthenticated, activeTab]);
 
-  const loadProjects = async (status: TabStatus) => {
+  const loadProjects = async (tab: TabStatus) => {
     try {
       setIsLoading(true);
-      const response = await projectsApi.list(1, 50, status);
+      let statusFilter: string | string[];
+      if (tab === "ACTIVE") {
+        statusFilter = ["active", "processing"];
+      } else if (tab === "PROCESSING") {
+        statusFilter = "processing";
+      } else {
+        statusFilter = "archived";
+      }
+      const response = await projectsApi.list(1, 50, statusFilter);
       setProjects(response.items);
     } catch (error) {
       console.error("Failed to load projects:", error);
@@ -135,7 +151,10 @@ function Dashboard() {
 
         <div className="flex gap-1 mb-6 border-b">
           <button
-            onClick={() => setActiveTab("ACTIVE")}
+            onClick={() => {
+              setActiveTab("ACTIVE");
+              navigate({ to: "/dashboard", search: {} });
+            }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "ACTIVE"
                 ? "border-primary text-primary"
@@ -145,7 +164,24 @@ function Dashboard() {
             Active Projects
           </button>
           <button
-            onClick={() => setActiveTab("ARCHIVED")}
+            onClick={() => {
+              setActiveTab("PROCESSING");
+              navigate({ to: "/dashboard", search: { tab: "PROCESSING" } });
+            }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === "PROCESSING"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <CircleNotch className="h-4 w-4" />
+            Processing
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("ARCHIVED");
+              navigate({ to: "/dashboard", search: { tab: "ARCHIVED" } });
+            }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
               activeTab === "ARCHIVED"
                 ? "border-primary text-primary"
@@ -165,7 +201,7 @@ function Dashboard() {
         ) : projects.length === 0 ? (
           <Card className="text-center py-12">
             <CardContent>
-              {activeTab === "ACTIVE" ? (
+              {activeTab === "ACTIVE" && (
                 <>
                   <Folder className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No active projects</h3>
@@ -179,7 +215,17 @@ function Dashboard() {
                     </Button>
                   </Link>
                 </>
-              ) : (
+              )}
+              {activeTab === "PROCESSING" && (
+                <>
+                  <CircleNotch className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No processing projects</h3>
+                  <p className="text-muted-foreground">
+                    Projects currently being processed will appear here
+                  </p>
+                </>
+              )}
+              {activeTab === "ARCHIVED" && (
                 <>
                   <Archive className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No archived projects</h3>
@@ -213,11 +259,13 @@ function Dashboard() {
                     </CardHeader>
                     <CardContent>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        {project.drive_folder_name && (
+                        {project.drive_folders && project.drive_folders.length > 0 && (
                           <div className="flex items-center gap-1">
                             <Folder className="h-4 w-4" />
                             <span className="truncate max-w-[120px]">
-                              {project.drive_folder_name}
+                              {project.drive_folders.length === 1 
+                                ? project.drive_folders[0].name 
+                                : `${project.drive_folders.length} folders`}
                             </span>
                           </div>
                         )}

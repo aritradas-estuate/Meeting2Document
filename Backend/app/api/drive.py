@@ -173,11 +173,12 @@ async def list_files(
         if page_token:
             request_params["pageToken"] = page_token
 
+        request_params["includeItemsFromAllDrives"] = True
+        request_params["supportsAllDrives"] = True
+
         if drive_id:
             request_params["driveId"] = drive_id
             request_params["corpora"] = "drive"
-            request_params["includeItemsFromAllDrives"] = True
-            request_params["supportsAllDrives"] = True
 
         results = service.files().list(**request_params).execute()
 
@@ -215,10 +216,11 @@ async def navigate_folder(
     try:
         service = get_drive_service(current_user)
 
-        # Get current folder info
-        folder_params: dict[str, str | bool] = {"fileId": folder_id, "fields": "id,name,parents"}
-        if drive_id:
-            folder_params["supportsAllDrives"] = True
+        folder_params: dict[str, str | bool] = {
+            "fileId": folder_id,
+            "fields": "id,name,parents",
+            "supportsAllDrives": True,
+        }
 
         current_folder_data = service.files().get(**folder_params).execute()
         current_folder = DriveItem(
@@ -238,9 +240,11 @@ async def navigate_folder(
 
         while parent_id:
             try:
-                parent_params = {"fileId": parent_id, "fields": "id,name,parents"}
-                if drive_id:
-                    parent_params["supportsAllDrives"] = True
+                parent_params: dict[str, str | bool] = {
+                    "fileId": parent_id,
+                    "fields": "id,name,parents",
+                    "supportsAllDrives": True,
+                }
 
                 parent = service.files().get(**parent_params).execute()
                 breadcrumbs.insert(0, DriveBreadcrumb(id=parent["id"], name=parent["name"]))

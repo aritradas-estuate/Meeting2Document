@@ -16,11 +16,15 @@ import {
   SpinnerGap,
   Warning,
   ArrowClockwise,
+  Check,
+  CheckSquare,
+  Square,
 } from "@phosphor-icons/react";
 
 interface DriveBrowserProps {
   onSelect: (item: DriveItem) => void;
-  selectedId?: string;
+  onSelectCurrentFolder?: (folder: DriveItem) => void;
+  selectedIds?: string[];
   showOnlyFolders?: boolean;
 }
 
@@ -30,7 +34,8 @@ type ViewState =
 
 export function DriveBrowser({
   onSelect,
-  selectedId,
+  onSelectCurrentFolder,
+  selectedIds = [],
   showOnlyFolders = false,
 }: DriveBrowserProps) {
   const [viewState, setViewState] = useState<ViewState>({ type: "drives" });
@@ -39,6 +44,7 @@ export function DriveBrowser({
   const [breadcrumbs, setBreadcrumbs] = useState<DriveBreadcrumb[]>([]);
   const [currentDriveId, setCurrentDriveId] = useState<string | undefined>();
   const [currentDriveName, setCurrentDriveName] = useState<string>("");
+  const [currentFolder, setCurrentFolder] = useState<DriveItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +63,6 @@ export function DriveBrowser({
     }
   }, []);
 
-  // Load folder contents
   const loadFolder = useCallback(
     async (folderId: string, driveId?: string) => {
       setIsLoading(true);
@@ -66,6 +71,7 @@ export function DriveBrowser({
         const response = await driveApi.navigate(folderId, driveId);
         setItems(response.items);
         setBreadcrumbs(response.breadcrumbs);
+        setCurrentFolder(response.current_folder);
       } catch (err) {
         setError("Failed to load folder contents");
         console.error(err);
@@ -271,9 +277,20 @@ export function DriveBrowser({
             </Button>
           </div>
         ))}
+
+        {onSelectCurrentFolder && currentFolder && (
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => onSelectCurrentFolder(currentFolder)}
+            className="ml-auto shrink-0"
+          >
+            <Check className="h-3 w-3 mr-1" />
+            Select This Folder
+          </Button>
+        )}
       </div>
 
-      {/* Items list */}
       {displayItems.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
           <p>This folder is empty</p>
@@ -281,7 +298,7 @@ export function DriveBrowser({
       ) : (
         <div className="grid gap-1 max-h-80 overflow-y-auto">
           {displayItems.map((item) => {
-            const isSelected = selectedId === item.id;
+            const isSelected = selectedIds.includes(item.id);
             const canSelect = item.is_folder || !showOnlyFolders;
 
             return (
@@ -293,7 +310,19 @@ export function DriveBrowser({
                     : "hover:bg-muted/50 border-transparent"
                 }`}
               >
-                {/* Icon - clickable for folders to navigate */}
+                {canSelect && (
+                  <button
+                    onClick={() => handleItemSelect(item)}
+                    className="shrink-0"
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="h-5 w-5 text-primary" weight="fill" />
+                    ) : (
+                      <Square className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </button>
+                )}
+
                 <button
                   onClick={() =>
                     item.is_folder ? handleFolderClick(item) : undefined
@@ -304,7 +333,6 @@ export function DriveBrowser({
                   {getItemIcon(item)}
                 </button>
 
-                {/* Name - clickable for folders to navigate */}
                 <button
                   onClick={() =>
                     item.is_folder ? handleFolderClick(item) : undefined
@@ -319,23 +347,10 @@ export function DriveBrowser({
                   {item.name}
                 </button>
 
-                {/* Size */}
                 {!item.is_folder && item.size && (
                   <span className="text-xs text-muted-foreground shrink-0">
                     {formatSize(item.size)}
                   </span>
-                )}
-
-                {/* Select button */}
-                {canSelect && (
-                  <Button
-                    variant={isSelected ? "default" : "outline"}
-                    size="xs"
-                    onClick={() => handleItemSelect(item)}
-                    className="shrink-0"
-                  >
-                    {isSelected ? "Selected" : "Select"}
-                  </Button>
                 )}
               </div>
             );

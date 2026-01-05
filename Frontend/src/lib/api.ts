@@ -141,9 +141,12 @@ export const authApi = {
 // ============================================================
 
 export const projectsApi = {
-  list: (page = 1, pageSize = 20, status?: 'ACTIVE' | 'ARCHIVED'): Promise<ProjectListResponse> => {
+  list: (page = 1, pageSize = 20, status?: string | string[]): Promise<ProjectListResponse> => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-    if (status) params.set('status', status.toLowerCase());
+    if (status) {
+      const statusStr = Array.isArray(status) ? status.join(',') : status;
+      params.set('status', statusStr.toLowerCase());
+    }
     return apiFetch<ProjectListResponse>(`/api/projects?${params}`);
   },
 
