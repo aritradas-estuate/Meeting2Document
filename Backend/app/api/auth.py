@@ -29,8 +29,7 @@ GOOGLE_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/drive.readonly",  # Read files from Drive
-    "https://www.googleapis.com/auth/drive.file",  # Create/edit files created by app
+    "https://www.googleapis.com/auth/drive",  # Full Drive access (read, write, share)
 ]
 
 
@@ -66,7 +65,6 @@ async def get_google_auth_url(redirect_uri: str | None = None) -> GoogleAuthURL:
 
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
         prompt="consent",
     )
 

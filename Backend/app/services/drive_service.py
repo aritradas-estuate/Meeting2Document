@@ -48,13 +48,19 @@ class DriveService:
         if not self.user.access_token:
             raise DriveAccessError(message="No Google Drive access token available")
 
+        # Google's Credentials class uses naive UTC datetimes internally,
+        # so convert our timezone-aware datetime to naive UTC
+        expiry = self.user.token_expires_at
+        if expiry and expiry.tzinfo is not None:
+            expiry = expiry.replace(tzinfo=None)
+
         credentials = Credentials(
             token=self.user.access_token,
             refresh_token=self.user.refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
             client_id=settings.google_client_id,
             client_secret=settings.google_client_secret,
-            expiry=self.user.token_expires_at,
+            expiry=expiry,
         )
 
         # Check if token needs refresh

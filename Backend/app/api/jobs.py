@@ -6,13 +6,14 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, Pagination, require_project_access
 from app.config import settings
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.models.job import JobStatus, ProcessingJob
-from app.models.project import Project, ProjectStatus
+from app.models.project import Project
 from app.schemas.base import MessageResponse, PaginatedResponse
 from app.schemas.job import JobCreate, JobProgress, JobResponse, JobWithResults
 from workers.celery_app import celery_app
@@ -65,10 +66,6 @@ async def create_job(
     )
     db.add(job)
     await db.flush()
-
-    # Update project status
-    project.status = ProjectStatus.PROCESSING
-
     await db.commit()
 
     logger.info("Created processing job", job_id=job.id, project_id=project.id)
@@ -126,14 +123,16 @@ async def get_job(
     current_user: CurrentUser,
     job_id: int,
 ) -> JobWithResults:
-    """Get a specific job with full results."""
-    result = await db.execute(select(ProcessingJob).join(Project).where(ProcessingJob.id == job_id))
+    result = await db.execute(
+        select(ProcessingJob)
+        .options(selectinload(ProcessingJob.project))
+        .where(ProcessingJob.id == job_id)
+    )
     job = result.scalar_one_or_none()
 
     if not job:
         raise NotFoundError(message="Job not found")
 
-    # Verify access through project
     require_project_access(job.project.user_id, current_user)
 
     return JobWithResults.model_validate(job)
@@ -145,8 +144,11 @@ async def get_job_progress(
     current_user: CurrentUser,
     job_id: int,
 ) -> JobProgress:
-    """Get current progress of a processing job."""
-    result = await db.execute(select(ProcessingJob).join(Project).where(ProcessingJob.id == job_id))
+    result = await db.execute(
+        select(ProcessingJob)
+        .options(selectinload(ProcessingJob.project))
+        .where(ProcessingJob.id == job_id)
+    )
     job = result.scalar_one_or_none()
 
     if not job:
@@ -169,8 +171,11 @@ async def cancel_job(
     current_user: CurrentUser,
     job_id: int,
 ) -> MessageResponse:
-    """Cancel a processing job."""
-    result = await db.execute(select(ProcessingJob).join(Project).where(ProcessingJob.id == job_id))
+    result = await db.execute(
+        select(ProcessingJob)
+        .options(selectinload(ProcessingJob.project))
+        .where(ProcessingJob.id == job_id)
+    )
     job = result.scalar_one_or_none()
 
     if not job:
@@ -186,10 +191,6 @@ async def cancel_job(
     job.error_message = "Cancelled by user"
     job.completed_at = datetime.now(timezone.utc)
 
-    # Reset project status if this was the only processing job
-    # (In production, check if there are other active jobs)
-    job.project.status = ProjectStatus.ACTIVE
-
     logger.info("Cancelled job", job_id=job.id)
 
     # TODO: Cancel Celery task
@@ -204,8 +205,11 @@ async def retry_job(
     current_user: CurrentUser,
     job_id: int,
 ) -> JobResponse:
-    """Retry a failed processing job."""
-    result = await db.execute(select(ProcessingJob).join(Project).where(ProcessingJob.id == job_id))
+    result = await db.execute(
+        select(ProcessingJob)
+        .options(selectinload(ProcessingJob.project))
+        .where(ProcessingJob.id == job_id)
+    )
     job = result.scalar_one_or_none()
 
     if not job:
@@ -223,9 +227,6 @@ async def retry_job(
     job.stage_progress = {}
     job.started_at = None
     job.completed_at = None
-
-    # Update project status
-    job.project.status = ProjectStatus.PROCESSING
 
     await db.commit()
 

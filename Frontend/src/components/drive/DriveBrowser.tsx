@@ -26,6 +26,7 @@ interface DriveBrowserProps {
   onSelectCurrentFolder?: (folder: DriveItem) => void;
   selectedIds?: string[];
   showOnlyFolders?: boolean;
+  selectFoldersOnly?: boolean;
 }
 
 type ViewState =
@@ -37,6 +38,7 @@ export function DriveBrowser({
   onSelectCurrentFolder,
   selectedIds = [],
   showOnlyFolders = false,
+  selectFoldersOnly = false,
 }: DriveBrowserProps) {
   const [viewState, setViewState] = useState<ViewState>({ type: "drives" });
   const [sharedDrives, setSharedDrives] = useState<SharedDrive[]>([]);
@@ -299,7 +301,9 @@ export function DriveBrowser({
         <div className="grid gap-1 max-h-80 overflow-y-auto">
           {displayItems.map((item) => {
             const isSelected = selectedIds.includes(item.id);
-            const canSelect = item.is_folder || !showOnlyFolders;
+            const canSelect = selectFoldersOnly
+              ? item.is_folder
+              : item.is_folder || !showOnlyFolders;
 
             return (
               <div

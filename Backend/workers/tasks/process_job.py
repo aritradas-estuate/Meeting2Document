@@ -18,14 +18,14 @@ from typing import Any
 
 from celery import shared_task
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.db.database import AsyncSessionLocal
 from app.models.job import JobStatus, ProcessingJob
-from app.models.project import Project, ProjectStatus
+from app.models.project import Project
 from app.services.drive_service import DriveService
 from workers.ai_pipeline.extraction.transcription import TranscriptionService
 from workers.ai_pipeline.extraction.information_extractor import InformationExtractor
@@ -149,150 +149,151 @@ async def process_single_file(
 async def process_job_async(job_id: int) -> dict[str, Any]:
     logger.info("Starting job processing", job_id=job_id)
 
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(ProcessingJob)
-            .options(selectinload(ProcessingJob.project).selectinload(Project.user))
-            .where(ProcessingJob.id == job_id)
-        )
-        job = result.scalar_one_or_none()
+    task_engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+    )
+    TaskSessionLocal = async_sessionmaker(
+        bind=task_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
-        if not job:
-            logger.error("Job not found", job_id=job_id)
-            raise ValueError(f"Job {job_id} not found")
+    try:
+        async with TaskSessionLocal() as session:
+            result = await session.execute(
+                select(ProcessingJob)
+                .options(selectinload(ProcessingJob.project).selectinload(Project.user))
+                .where(ProcessingJob.id == job_id)
+            )
+            job = result.scalar_one_or_none()
 
-        user = job.project.user
-        if not user or not user.access_token:
-            raise ValueError("User not found or missing Google credentials")
+            if not job:
+                logger.error("Job not found", job_id=job_id)
+                raise ValueError(f"Job {job_id} not found")
 
-        try:
-            job.status = JobStatus.EXTRACTING
-            job.started_at = datetime.now(timezone.utc)
-            job.current_stage = "extracting"
-            await session.commit()
+            user = job.project.user
+            if not user or not user.access_token:
+                raise ValueError("User not found or missing Google credentials")
 
-            drive_service = DriveService(user, session)
-            transcription_service = TranscriptionService()
-            extractor = InformationExtractor()
+            try:
+                job.status = JobStatus.EXTRACTING
+                job.started_at = datetime.now(timezone.utc)
+                job.current_stage = "extracting"
+                await session.commit()
 
-            extraction_results: dict[str, Any] = {
-                "files": [],
-                "supporting_documents": [],
-                "metadata": {
-                    "started_at": datetime.now(timezone.utc).isoformat(),
-                    "models_used": {
-                        "transcription": "assemblyai",
-                        "extraction": settings.model_extraction,
+                drive_service = DriveService(user, session)
+                transcription_service = TranscriptionService()
+                extractor = InformationExtractor()
+
+                extraction_results: dict[str, Any] = {
+                    "files": [],
+                    "supporting_documents": [],
+                    "metadata": {
+                        "started_at": datetime.now(timezone.utc).isoformat(),
+                        "models_used": {
+                            "transcription": "assemblyai",
+                            "extraction": settings.model_extraction,
+                        },
                     },
-                },
-            }
+                }
 
-            video_files = job.video_files or []
-            total_files = len(video_files)
+                video_files = job.video_files or []
+                total_files = len(video_files)
 
-            logger.info("Processing video files", job_id=job_id, total_files=total_files)
+                logger.info("Processing video files", job_id=job_id, total_files=total_files)
 
-            for idx, file_info in enumerate(video_files):
-                file_name = file_info.get("name", "Unknown")
+                for idx, file_info in enumerate(video_files):
+                    file_name = file_info.get("name", "Unknown")
+
+                    await update_job_status(
+                        session,
+                        job_id,
+                        JobStatus.EXTRACTING,
+                        stage_progress={
+                            "extracting": {
+                                "status": "in_progress",
+                                "progress": int((idx / total_files) * 100),
+                                "current_file": file_name,
+                                "files_completed": idx,
+                                "total_files": total_files,
+                            }
+                        },
+                    )
+
+                    file_result = await process_single_file(
+                        file_info=file_info,
+                        drive_service=drive_service,
+                        transcription_service=transcription_service,
+                        extractor=extractor,
+                        session=session,
+                        job_id=job_id,
+                        file_index=idx,
+                        total_files=total_files,
+                    )
+
+                    extraction_results["files"].append(file_result)
+
+                extraction_results["metadata"]["completed_at"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
+                extraction_results["metadata"]["total_files_processed"] = total_files
+
+                successful_files = sum(
+                    1 for f in extraction_results["files"] if f["status"] == "completed"
+                )
+                failed_files = total_files - successful_files
+
+                if failed_files == total_files:
+                    raise ValueError("All files failed to process")
 
                 await update_job_status(
                     session,
                     job_id,
-                    JobStatus.EXTRACTING,
+                    JobStatus.COMPLETED,
+                    current_stage="completed",
                     stage_progress={
                         "extracting": {
-                            "status": "in_progress",
-                            "progress": int((idx / total_files) * 100),
-                            "current_file": file_name,
-                            "files_completed": idx,
+                            "status": "completed",
+                            "progress": 100,
+                            "files_completed": total_files,
                             "total_files": total_files,
+                            "successful": successful_files,
+                            "failed": failed_files,
                         }
                     },
+                    extraction_result=extraction_results,
                 )
 
-                file_result = await process_single_file(
-                    file_info=file_info,
-                    drive_service=drive_service,
-                    transcription_service=transcription_service,
-                    extractor=extractor,
-                    session=session,
+                logger.info(
+                    "Job completed successfully",
                     job_id=job_id,
-                    file_index=idx,
-                    total_files=total_files,
+                    successful_files=successful_files,
+                    failed_files=failed_files,
                 )
 
-                extraction_results["files"].append(file_result)
+                return {
+                    "status": "completed",
+                    "job_id": job_id,
+                    "files_processed": total_files,
+                    "successful": successful_files,
+                    "failed": failed_files,
+                }
 
-            extraction_results["metadata"]["completed_at"] = datetime.now(timezone.utc).isoformat()
-            extraction_results["metadata"]["total_files_processed"] = total_files
+            except Exception as e:
+                logger.exception("Job processing failed", job_id=job_id, error=str(e))
 
-            successful_files = sum(
-                1 for f in extraction_results["files"] if f["status"] == "completed"
-            )
-            failed_files = total_files - successful_files
+                await update_job_status(
+                    session,
+                    job_id,
+                    JobStatus.FAILED,
+                    current_stage="failed",
+                    error_message=str(e),
+                )
 
-            if failed_files == total_files:
-                raise ValueError("All files failed to process")
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.COMPLETED,
-                current_stage="completed",
-                stage_progress={
-                    "extracting": {
-                        "status": "completed",
-                        "progress": 100,
-                        "files_completed": total_files,
-                        "total_files": total_files,
-                        "successful": successful_files,
-                        "failed": failed_files,
-                    }
-                },
-                extraction_result=extraction_results,
-            )
-
-            project_result = await session.execute(
-                select(Project).where(Project.id == job.project_id)
-            )
-            project = project_result.scalar_one()
-            project.status = ProjectStatus.COMPLETED
-            await session.commit()
-
-            logger.info(
-                "Job completed successfully",
-                job_id=job_id,
-                successful_files=successful_files,
-                failed_files=failed_files,
-            )
-
-            return {
-                "status": "completed",
-                "job_id": job_id,
-                "files_processed": total_files,
-                "successful": successful_files,
-                "failed": failed_files,
-            }
-
-        except Exception as e:
-            logger.exception("Job processing failed", job_id=job_id, error=str(e))
-
-            await update_job_status(
-                session,
-                job_id,
-                JobStatus.FAILED,
-                current_stage="failed",
-                error_message=str(e),
-            )
-
-            project_result = await session.execute(
-                select(Project).where(Project.id == job.project_id)
-            )
-            project = project_result.scalar_one()
-            project.status = ProjectStatus.ACTIVE
-            await session.commit()
-
-            raise
+                raise
+    finally:
+        await task_engine.dispose()
 
 
 @shared_task(

@@ -34,7 +34,7 @@ export interface GoogleAuthURL {
 // Project Types
 // ============================================================
 
-export type ProjectStatus = 'ACTIVE' | 'PROCESSING' | 'COMPLETED' | 'ARCHIVED';
+export type ProjectStatus = 'ACTIVE' | 'ARCHIVED';
 
 export interface DriveFolder {
   id: string;
@@ -124,6 +124,54 @@ export interface ProcessingJob {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Utterance {
+  speaker: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface MeetingExtraction {
+  summary: string;
+  decisions: Array<{ decision: string; made_by: string; context: string }>;
+  action_items: Array<{ task: string; assigned_to: string; due_date: string | null; priority: string | null }>;
+  key_points: Array<{ point: string; discussed_by: string[] }>;
+  questions_raised: Array<{ question: string; asked_by: string; answered: boolean; answer: string | null }>;
+  concerns: Array<{ concern: string; raised_by: string; resolution: string | null }>;
+  topics_discussed: Array<{ topic: string; duration_estimate: string }>;
+  follow_ups: Array<{ item: string; owner: string }>;
+}
+
+export interface ExtractionFileResult {
+  file_id: string;
+  file_name: string;
+  file_size: number;
+  status: string;
+  error?: string;
+  transcription?: {
+    text: string;
+    utterances?: Utterance[];
+  };
+  extraction?: MeetingExtraction;
+}
+
+export interface JobWithResults extends ProcessingJob {
+  extraction_result?: {
+    files: ExtractionFileResult[];
+    supporting_documents: unknown[];
+    metadata: {
+      started_at: string;
+      completed_at?: string;
+      models_used: {
+        transcription: string;
+        extraction: string;
+      };
+      total_files_processed?: number;
+    };
+  };
+  synthesis_result?: Record<string, unknown>;
 }
 
 export interface JobFileInput {

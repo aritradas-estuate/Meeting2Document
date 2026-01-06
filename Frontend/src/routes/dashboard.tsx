@@ -15,17 +15,15 @@ import {
   SignOut,
   User,
   Archive,
-  CircleNotch,
 } from "@phosphor-icons/react";
 
-type TabStatus = "ACTIVE" | "PROCESSING" | "ARCHIVED";
+type TabStatus = "ACTIVE" | "ARCHIVED";
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
   validateSearch: (search: Record<string, unknown>): { tab?: TabStatus } => {
     const tab = search.tab as string | undefined;
     if (tab?.toUpperCase() === "ARCHIVED") return { tab: "ARCHIVED" };
-    if (tab?.toUpperCase() === "PROCESSING") return { tab: "PROCESSING" };
     return { tab: "ACTIVE" };
   },
 });
@@ -57,14 +55,7 @@ function Dashboard() {
   const loadProjects = async (tab: TabStatus) => {
     try {
       setIsLoading(true);
-      let statusFilter: string | string[];
-      if (tab === "ACTIVE") {
-        statusFilter = ["active", "processing"];
-      } else if (tab === "PROCESSING") {
-        statusFilter = "processing";
-      } else {
-        statusFilter = "archived";
-      }
+      const statusFilter = tab === "ACTIVE" ? "active" : "archived";
       const response = await projectsApi.list(1, 50, statusFilter);
       setProjects(response.items);
     } catch (error) {
@@ -83,10 +74,6 @@ function Dashboard() {
     switch (status) {
       case "ACTIVE":
         return <Badge variant="secondary">Active</Badge>;
-      case "PROCESSING":
-        return <Badge className="bg-blue-500">Processing</Badge>;
-      case "COMPLETED":
-        return <Badge className="bg-green-500">Completed</Badge>;
       case "ARCHIVED":
         return <Badge variant="outline">Archived</Badge>;
       default:
@@ -165,20 +152,6 @@ function Dashboard() {
           </button>
           <button
             onClick={() => {
-              setActiveTab("PROCESSING");
-              navigate({ to: "/dashboard", search: { tab: "PROCESSING" } });
-            }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-              activeTab === "PROCESSING"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <CircleNotch className="h-4 w-4" />
-            Processing
-          </button>
-          <button
-            onClick={() => {
               setActiveTab("ARCHIVED");
               navigate({ to: "/dashboard", search: { tab: "ARCHIVED" } });
             }}
@@ -216,21 +189,12 @@ function Dashboard() {
                   </Link>
                 </>
               )}
-              {activeTab === "PROCESSING" && (
-                <>
-                  <CircleNotch className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No processing projects</h3>
-                  <p className="text-muted-foreground">
-                    Projects currently being processed will appear here
-                  </p>
-                </>
-              )}
               {activeTab === "ARCHIVED" && (
                 <>
                   <Archive className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No archived projects</h3>
                   <p className="text-muted-foreground">
-                    Completed projects that you archive will appear here
+                    Projects that you archive will appear here
                   </p>
                 </>
               )}

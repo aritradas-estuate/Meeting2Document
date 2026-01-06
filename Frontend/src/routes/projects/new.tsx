@@ -163,6 +163,7 @@ function NewProject() {
                   onSelectCurrentFolder={handleFolderSelect}
                   selectedIds={selectedFolders.map(f => f.id)}
                   showOnlyFolders={false}
+                  selectFoldersOnly={true}
                 />
               </CardContent>
             </Card>

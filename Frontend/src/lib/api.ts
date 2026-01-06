@@ -11,6 +11,7 @@ import type {
   ProjectUpdate,
   ProjectListResponse,
   ProcessingJob,
+  JobWithResults,
   JobCreate,
   JobListResponse,
   Document,
@@ -190,11 +191,12 @@ export const jobsApi = {
     return apiFetch<JobListResponse>(`/api/jobs?project_id=${projectId}&page=${page}&size=${size}`);
   },
 
-  /**
-   * Get a single job
-   */
   get: (id: number): Promise<ProcessingJob> => {
     return apiFetch<ProcessingJob>(`/api/jobs/${id}`);
+  },
+
+  getWithResults: (id: number): Promise<JobWithResults> => {
+    return apiFetch<JobWithResults>(`/api/jobs/${id}`);
   },
 
   create: (data: JobCreate): Promise<ProcessingJob> => {
