@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/stores/auth";
-import { projectsApi, jobsApi, documentsApi, driveApi } from "@/lib/api";
+import { useQuery, useMutation, useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { Id } from "../../../convex/_generated/dataModel";
 import { DeleteConfirmationModal } from "@/components/delete-confirmation-modal";
 import { DriveBrowser } from "@/components/drive/DriveBrowser";
-import type { Project, ProcessingJob, JobWithResults, Document, DriveItem, Utterance, MeetingExtraction } from "@/types/api";
+import type { DriveItem, Utterance, MeetingExtraction } from "@/types/api";
 import {
   ArrowLeft,
   Folder,
@@ -221,13 +223,22 @@ function ExtractionView({ data }: { data: MeetingExtraction }) {
 function ProjectDetail() {
   const { projectId } = Route.useParams();
   const navigate = useNavigate();
-  const { isAuthenticated, checkAuth } = useAuthStore();
+  const { isAuthenticated, isUserReady } = useAuthStore();
 
-  const [project, setProject] = useState<Project | null>(null);
-  const [jobs, setJobs] = useState<ProcessingJob[]>([]);
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const convexProjectId = projectId as Id<"projects">;
+  
+  const project = useQuery(api.projects.get, isUserReady ? { projectId: convexProjectId } : "skip");
+  const jobs = useQuery(api.jobs.list, isUserReady ? { projectId: convexProjectId } : "skip");
+  const documents = useQuery(api.documents.list, isUserReady ? { projectId: convexProjectId } : "skip");
+  
+  const archiveProject = useMutation(api.projects.archive);
+  const restoreProject = useMutation(api.projects.restore);
+  const deleteProject = useMutation(api.projects.permanentDelete);
+  const updateProject = useMutation(api.projects.update);
+  const createJob = useMutation(api.jobs.create);
+  const retryJob = useMutation(api.jobs.retry);
+  const navigateDrive = useAction(api.actions.drive.navigate);
+
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
@@ -239,9 +250,8 @@ function ProjectDetail() {
   const [selectedFiles, setSelectedFiles] = useState<DriveItem[]>([]);
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [isStartingProcessing, setIsStartingProcessing] = useState(false);
-  const [viewingJobResults, setViewingJobResults] = useState<JobWithResults | null>(null);
+  const [viewingJobResults, setViewingJobResults] = useState<any | null>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
-  const [completedJobResults, setCompletedJobResults] = useState<JobWithResults[]>([]);
   const [viewingContent, setViewingContent] = useState<{
     type: 'transcript' | 'extraction';
     fileName: string;
@@ -250,71 +260,23 @@ function ProjectDetail() {
     extractionData?: MeetingExtraction;
   } | null>(null);
 
-  const projectIdNum = parseInt(projectId, 10);
-  const isArchived = project?.status?.toUpperCase() === "ARCHIVED";
+  const isLoading = !isUserReady || project === undefined;
+  const error = isUserReady && project === null ? "Project not found" : null;
+  const isArchived = project?.status === "archived";
+  
+  const completedJobs = (jobs ?? []).filter(j => j.status === "completed");
 
-  // Check auth on mount
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
-
-  // Redirect if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
       navigate({ to: "/" });
     }
   }, [isAuthenticated, navigate]);
 
-  // Load project data
-  const loadProject = useCallback(async () => {
-    if (!isAuthenticated || isNaN(projectIdNum)) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const [projectData, jobsResponse, docsResponse] = await Promise.all([
-        projectsApi.get(projectIdNum),
-        jobsApi.list(projectIdNum),
-        documentsApi.list(projectIdNum),
-      ]);
-
-      setProject(projectData);
-      setJobs(jobsResponse.items);
-      setDocuments(docsResponse.items);
-
-      try {
-        const completedJobs = jobsResponse.items.filter(j => j.status?.toUpperCase() === "COMPLETED");
-        if (completedJobs.length > 0) {
-          const resultsPromises = completedJobs.map(j => jobsApi.getWithResults(j.id));
-          const results = await Promise.all(resultsPromises);
-          setCompletedJobResults(results);
-        } else {
-          setCompletedJobResults([]);
-        }
-      } catch (resultsErr) {
-        console.error("Failed to load extraction results:", resultsErr);
-        setCompletedJobResults([]);
-      }
-    } catch (err) {
-      console.error("Failed to load project data:", err);
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      console.error("Error details:", { projectId: projectIdNum, errorMessage, err });
-      setError(`Failed to load project: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, projectIdNum]);
-
-  useEffect(() => {
-    loadProject();
-  }, [loadProject]);
-
   const handleArchive = async () => {
     if (!project) return;
     setIsArchiving(true);
     try {
-      await projectsApi.archive(project.id);
+      await archiveProject({ projectId: convexProjectId });
       navigate({ to: "/dashboard", search: { tab: "ARCHIVED" } });
     } catch (err) {
       console.error("Failed to archive project:", err);
@@ -327,8 +289,7 @@ function ProjectDetail() {
     if (!project) return;
     setIsRestoring(true);
     try {
-      const restored = await projectsApi.restore(project.id);
-      setProject(restored);
+      await restoreProject({ projectId: convexProjectId });
     } catch (err) {
       console.error("Failed to restore project:", err);
     } finally {
@@ -341,7 +302,7 @@ function ProjectDetail() {
     const wasArchived = isArchived;
     setIsDeleting(true);
     try {
-      await projectsApi.permanentDelete(project.id);
+      await deleteProject({ projectId: convexProjectId });
       navigate({ to: "/dashboard", search: wasArchived ? { tab: "ARCHIVED" } : {} });
     } catch (err) {
       console.error("Failed to delete project:", err);
@@ -352,8 +313,21 @@ function ProjectDetail() {
   const loadFolderFiles = useCallback(async (folderId: string) => {
     setLoadingFolders(prev => new Set(prev).add(folderId));
     try {
-      const response = await driveApi.navigate(folderId);
-      setFolderFiles(prev => ({ ...prev, [folderId]: response.items }));
+      const response = await navigateDrive({ folderId });
+      const transformedItems: DriveItem[] = response.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        mime_type: item.mimeType,
+        size: item.size,
+        is_folder: item.isFolder,
+        created_time: item.createdTime,
+        modified_time: item.modifiedTime,
+        web_view_link: item.webViewLink,
+        icon_link: item.iconLink,
+        thumbnail_link: item.thumbnailLink,
+        parents: item.parents,
+      }));
+      setFolderFiles(prev => ({ ...prev, [folderId]: transformedItems }));
     } catch (err) {
       console.error("Failed to load folder files:", err);
     } finally {
@@ -363,7 +337,7 @@ function ProjectDetail() {
         return next;
       });
     }
-  }, []);
+  }, [navigateDrive]);
 
   const toggleFolder = (folderId: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -404,15 +378,14 @@ function ProjectDetail() {
 
   const handleAddFolder = async (folder: DriveItem) => {
     if (!project) return;
-    const existingFolders = project.drive_folders || [];
+    const existingFolders = project.driveFolders || [];
     if (existingFolders.some(f => f.id === folder.id)) {
       setShowAddFolder(false);
       return;
     }
     const newFolders = [...existingFolders, { id: folder.id, name: folder.name }];
     try {
-      const updated = await projectsApi.update(project.id, { drive_folders: newFolders });
-      setProject(updated);
+      await updateProject({ projectId: convexProjectId, driveFolders: newFolders });
       setShowAddFolder(false);
     } catch (err) {
       console.error("Failed to add folder:", err);
@@ -421,10 +394,9 @@ function ProjectDetail() {
 
   const handleRemoveFolder = async (folderId: string) => {
     if (!project) return;
-    const newFolders = (project.drive_folders || []).filter(f => f.id !== folderId);
+    const newFolders = (project.driveFolders || []).filter(f => f.id !== folderId);
     try {
-      const updated = await projectsApi.update(project.id, { drive_folders: newFolders });
-      setProject(updated);
+      await updateProject({ projectId: convexProjectId, driveFolders: newFolders });
       setSelectedFiles(selectedFiles.filter(f => !f.parents?.includes(folderId)));
       setExpandedFolders(prev => {
         const next = new Set(prev);
@@ -443,17 +415,16 @@ function ProjectDetail() {
 
     setIsStartingProcessing(true);
     try {
-      await jobsApi.create({
-        project_id: project.id,
-        video_files: videoFiles.map(f => ({
+      await createJob({
+        projectId: convexProjectId,
+        videoFiles: videoFiles.map(f => ({
           id: f.id,
           name: f.name,
-          mime_type: f.mime_type,
+          mimeType: f.mime_type,
           size: f.size || undefined,
-          web_view_link: f.web_view_link || undefined,
+          webViewLink: f.web_view_link || undefined,
         })),
       });
-      await loadProject();
       setSelectedFiles([]);
     } catch (err) {
       console.error("Failed to start processing:", err);
@@ -462,16 +433,8 @@ function ProjectDetail() {
     }
   };
 
-  const handleViewResults = async (jobId: number) => {
-    setIsLoadingResults(true);
-    try {
-      const jobWithResults = await jobsApi.getWithResults(jobId);
-      setViewingJobResults(jobWithResults);
-    } catch (err) {
-      console.error("Failed to load job results:", err);
-    } finally {
-      setIsLoadingResults(false);
-    }
+  const handleViewResults = (job: any) => {
+    setViewingJobResults(job);
   };
 
   const downloadTranscript = (fileName: string, content: string) => {
@@ -506,33 +469,26 @@ function ProjectDetail() {
 
   const videoFileCount = selectedFiles.filter(f => f.mime_type.includes("video")).length;
 
-  // Get job status badge (handles both uppercase and lowercase status values)
-  const getJobStatusBadge = (status: ProcessingJob["status"]) => {
-    const normalizedStatus = status?.toUpperCase();
-    switch (normalizedStatus) {
-      case "PENDING":
+  const getJobStatusBadge = (status: string) => {
+    switch (status) {
+      case "pending":
         return <Badge variant="outline">Pending</Badge>;
-      case "DOWNLOADING":
-      case "EXTRACTING":
-      case "SYNTHESIZING":
-      case "GENERATING":
-      case "REVIEWING":
-      case "ASSEMBLING":
-      case "UPLOADING":
+      case "transcribing":
+      case "extracting":
         return (
           <Badge className="bg-blue-500">
             <SpinnerGap className="h-3 w-3 mr-1 animate-spin" />
-            {normalizedStatus.charAt(0) + normalizedStatus.slice(1).toLowerCase()}
+            {status.charAt(0).toUpperCase() + status.slice(1)}
           </Badge>
         );
-      case "COMPLETED":
+      case "completed":
         return (
           <Badge className="bg-green-500">
             <CheckCircle className="h-3 w-3 mr-1" />
             Completed
           </Badge>
         );
-      case "FAILED":
+      case "failed":
         return (
           <Badge className="bg-destructive">
             <XCircle className="h-3 w-3 mr-1" />
@@ -544,19 +500,18 @@ function ProjectDetail() {
     }
   };
 
-  // Get document status badge
-  const getDocStatusBadge = (status: Document["status"]) => {
+  const getDocStatusBadge = (status: string) => {
     switch (status) {
-      case "DRAFT":
+      case "draft":
         return <Badge variant="outline">Draft</Badge>;
-      case "GENERATING":
+      case "generating":
         return (
           <Badge className="bg-blue-500">
             <SpinnerGap className="h-3 w-3 mr-1 animate-spin" />
             Generating
           </Badge>
         );
-      case "COMPLETE":
+      case "complete":
         return (
           <Badge className="bg-green-500">
             <CheckCircle className="h-3 w-3 mr-1" />
@@ -634,7 +589,7 @@ function ProjectDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={loadProject}>
+            <Button variant="ghost" size="sm" onClick={() => {}}>
               <ArrowClockwise className="h-4 w-4" />
             </Button>
             {isArchived ? (
@@ -705,30 +660,30 @@ function ProjectDetail() {
               </div>
               <Badge
                 variant={
-                  project.status === "COMPLETED" ? "default" : "secondary"
+                  project.status === "archived" ? "outline" : "secondary"
                 }
               >
-                {project.status}
+                {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
               </Badge>
             </div>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
-              {project.drive_folders && project.drive_folders.length > 0 && (
+              {project.driveFolders && project.driveFolders.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Folder className="h-4 w-4" />
-                  <span>{project.drive_folders.length} folder{project.drive_folders.length > 1 ? 's' : ''}</span>
+                  <span>{project.driveFolders.length} folder{project.driveFolders.length > 1 ? 's' : ''}</span>
                 </div>
               )}
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4" />
                 <span>
-                  Created {new Date(project.created_at).toLocaleDateString()}
+                  Created {new Date(project._creationTime).toLocaleDateString()}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <File className="h-4 w-4" />
-                <span>Schema: {project.schema_type}</span>
+                <span>Schema: {project.schemaType}</span>
               </div>
             </div>
           </CardContent>
@@ -769,7 +724,7 @@ function ProjectDetail() {
                 </div>
               )}
 
-              {(!project.drive_folders || project.drive_folders.length === 0) && !showAddFolder ? (
+              {(!project.driveFolders || project.driveFolders.length === 0) && !showAddFolder ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Folder className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No folders added yet</p>
@@ -777,7 +732,7 @@ function ProjectDetail() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {project.drive_folders?.map((folder) => {
+                  {project.driveFolders?.map((folder) => {
                     const isExpanded = expandedFolders.has(folder.id);
                     const isLoadingFolder = loadingFolders.has(folder.id);
                     const files = folderFiles[folder.id] || [];
@@ -877,7 +832,7 @@ function ProjectDetail() {
                 </div>
               )}
 
-              {(project.drive_folders?.length ?? 0) > 0 && (
+              {(project.driveFolders?.length ?? 0) > 0 && (
                 <div className="flex items-center gap-4 pt-4 border-t">
                   <Button
                     onClick={handleStartProcessing}
@@ -908,10 +863,9 @@ function ProjectDetail() {
           </Card>
         )}
 
-        {/* Jobs Section */}
         <section>
           <h2 className="text-xl font-semibold mb-4">Processing Jobs</h2>
-          {jobs.length === 0 ? (
+          {(jobs ?? []).length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center">
                 <SpinnerGap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -923,64 +877,63 @@ function ProjectDetail() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {jobs.map((job) => (
-                <Card key={job.id}>
+              {(jobs ?? []).map((job) => (
+                <Card key={job._id}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-base">
-                        Job #{job.id}
+                        Job
                       </CardTitle>
                       {getJobStatusBadge(job.status)}
                     </div>
                     <CardDescription>
-                      {job.video_files.length} video file
-                      {job.video_files.length !== 1 ? "s" : ""}
-                      {job.supporting_files && job.supporting_files.length > 0
-                        ? ` + ${job.supporting_files.length} supporting files`
+                      {job.videoFiles.length} video file
+                      {job.videoFiles.length !== 1 ? "s" : ""}
+                      {job.supportingFiles && job.supportingFiles.length > 0
+                        ? ` + ${job.supportingFiles.length} supporting files`
                         : ""}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                      {job.current_stage && (
+                      {job.currentStage && (
                         <div className="flex items-center gap-2">
                           <SpinnerGap className="h-4 w-4 animate-spin" />
-                          <span>Stage: {job.current_stage}</span>
+                          <span>Stage: {job.currentStage}</span>
                         </div>
                       )}
-                      {job.started_at && (
+                      {job.startedAt && (
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4" />
                           <span>
                             Started:{" "}
-                            {new Date(job.started_at).toLocaleString()}
+                            {new Date(job.startedAt).toLocaleString()}
                           </span>
                         </div>
                       )}
-                      {job.completed_at && (
+                      {job.completedAt && (
                         <div className="flex items-center gap-2">
                           <CheckCircle className="h-4 w-4" />
                           <span>
                             Completed:{" "}
-                            {new Date(job.completed_at).toLocaleString()}
+                            {new Date(job.completedAt).toLocaleString()}
                           </span>
                         </div>
                       )}
-                      {job.error_message && (
+                      {job.errorMessage && (
                         <div className="flex items-center gap-2 text-destructive">
                           <XCircle className="h-4 w-4" />
-                          <span>{job.error_message}</span>
+                          <span>{job.errorMessage}</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Video files list */}
                     <div className="mt-4">
                       <p className="text-xs text-muted-foreground mb-2">
                         Files:
                       </p>
                       <div className="flex flex-wrap gap-2">
-                        {job.video_files.map((file) => (
+                        {job.videoFiles.map((file) => (
                           <Badge key={file.id} variant="outline">
                             {file.name}
                           </Badge>
@@ -988,13 +941,12 @@ function ProjectDetail() {
                       </div>
                     </div>
 
-                    {/* Job actions */}
                     <div className="mt-4 flex gap-2">
-                      {job.status?.toUpperCase() === "COMPLETED" && (
+                      {job.status === "completed" && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleViewResults(job.id)}
+                          onClick={() => handleViewResults(job)}
                           disabled={isLoadingResults}
                         >
                           {isLoadingResults ? (
@@ -1005,14 +957,13 @@ function ProjectDetail() {
                           View Results
                         </Button>
                       )}
-                      {job.status?.toUpperCase() === "FAILED" && (
+                      {job.status === "failed" && (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={async () => {
                             try {
-                              await jobsApi.retry(job.id);
-                              loadProject();
+                              await retryJob({ jobId: job._id });
                             } catch (err) {
                               console.error("Failed to retry job:", err);
                             }
@@ -1032,7 +983,7 @@ function ProjectDetail() {
 
         <section>
           <h2 className="text-xl font-semibold mb-4">Extractions</h2>
-          {completedJobResults.length === 0 ? (
+          {completedJobs.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center">
                 <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1043,11 +994,11 @@ function ProjectDetail() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {completedJobResults.map((jobResult) =>
-                jobResult.extraction_result?.files
-                  .filter((file) => file.status === "completed")
-                  .map((file) => (
-                    <div key={`${jobResult.id}-${file.file_id}`} className="space-y-3">
+              {completedJobs.map((job) =>
+                job.extractionResult?.files
+                  ?.filter((file: any) => file.status === "completed")
+                  .map((file: any) => (
+                    <div key={`${job._id}-${file.file_id}`} className="space-y-3">
                       <Card>
                         <CardHeader className="pb-3">
                           <div className="flex items-center justify-between">
@@ -1056,7 +1007,7 @@ function ProjectDetail() {
                               <div>
                                 <CardTitle className="text-base">Transcript</CardTitle>
                                 <CardDescription className="text-xs">
-                                  {file.file_name} · Job #{jobResult.id}
+                                  {file.file_name}
                                 </CardDescription>
                               </div>
                             </div>
@@ -1096,7 +1047,7 @@ function ProjectDetail() {
                               <div>
                                 <CardTitle className="text-base">Key Ideas Extracted</CardTitle>
                                 <CardDescription className="text-xs">
-                                  {file.file_name} · Job #{jobResult.id}
+                                  {file.file_name}
                                 </CardDescription>
                               </div>
                             </div>
@@ -1136,7 +1087,7 @@ function ProjectDetail() {
 
         <section>
           <h2 className="text-xl font-semibold mb-4">Documents</h2>
-          {documents.length === 0 ? (
+          {(documents ?? []).length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center">
                 <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1148,23 +1099,23 @@ function ProjectDetail() {
             </Card>
           ) : (
             <div className="grid md:grid-cols-2 gap-4">
-              {documents.map((doc) => (
-                <Card key={doc.id}>
+              {(documents ?? []).map((doc) => (
+                <Card key={doc._id}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-base">{doc.title}</CardTitle>
                       {getDocStatusBadge(doc.status)}
                     </div>
                     <CardDescription>
-                      Version {doc.version} · {doc.schema_type}
+                      Version {doc.version} · {doc.schemaType}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
-                      {doc.drive_file_url && (
+                      {doc.driveFileUrl && (
                         <Button variant="outline" size="sm" asChild>
                           <a
-                            href={doc.drive_file_url}
+                            href={doc.driveFileUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -1173,15 +1124,12 @@ function ProjectDetail() {
                           </a>
                         </Button>
                       )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          try {
-                            const markdown = await documentsApi.getMarkdown(
-                              doc.id
-                            );
-                            const blob = new Blob([markdown], {
+                      {doc.markdownContent && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const blob = new Blob([doc.markdownContent || ""], {
                               type: "text/markdown",
                             });
                             const url = URL.createObjectURL(blob);
@@ -1190,14 +1138,12 @@ function ProjectDetail() {
                             a.download = `${doc.title}.md`;
                             a.click();
                             URL.revokeObjectURL(url);
-                          } catch (err) {
-                            console.error("Failed to download:", err);
-                          }
-                        }}
-                      >
-                        <DownloadSimple className="h-4 w-4 mr-2" />
-                        Download MD
-                      </Button>
+                          }}
+                        >
+                          <DownloadSimple className="h-4 w-4 mr-2" />
+                          Download MD
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

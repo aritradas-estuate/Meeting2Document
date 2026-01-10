@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { driveApi } from "@/lib/api";
+import { useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import type {
   DriveItem,
   SharedDrive,
@@ -40,6 +41,9 @@ export function DriveBrowser({
   showOnlyFolders = false,
   selectFoldersOnly = false,
 }: DriveBrowserProps) {
+  const listSharedDrivesAction = useAction(api.actions.drive.listSharedDrives);
+  const navigateAction = useAction(api.actions.drive.navigate);
+  
   const [viewState, setViewState] = useState<ViewState>({ type: "drives" });
   const [sharedDrives, setSharedDrives] = useState<SharedDrive[]>([]);
   const [items, setItems] = useState<DriveItem[]>([]);
@@ -50,12 +54,11 @@ export function DriveBrowser({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load shared drives
   const loadSharedDrives = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await driveApi.listSharedDrives();
+      const response = await listSharedDrivesAction({});
       setSharedDrives(response.drives);
     } catch (err) {
       setError("Failed to load shared drives");
@@ -63,17 +66,43 @@ export function DriveBrowser({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [listSharedDrivesAction]);
 
   const loadFolder = useCallback(
     async (folderId: string, driveId?: string) => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await driveApi.navigate(folderId, driveId);
-        setItems(response.items);
+        const response = await navigateAction({ folderId, driveId });
+        const transformedItems: DriveItem[] = response.items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          mime_type: item.mimeType,
+          size: item.size,
+          is_folder: item.isFolder,
+          created_time: item.createdTime,
+          modified_time: item.modifiedTime,
+          web_view_link: item.webViewLink,
+          icon_link: item.iconLink,
+          thumbnail_link: item.thumbnailLink,
+          parents: item.parents,
+        }));
+        setItems(transformedItems);
         setBreadcrumbs(response.breadcrumbs);
-        setCurrentFolder(response.current_folder);
+        const folder = response.currentFolder;
+        setCurrentFolder({
+          id: folder.id,
+          name: folder.name,
+          mime_type: folder.mimeType,
+          is_folder: folder.isFolder,
+          size: null,
+          created_time: null,
+          modified_time: null,
+          web_view_link: null,
+          icon_link: null,
+          thumbnail_link: null,
+          parents: null,
+        });
       } catch (err) {
         setError("Failed to load folder contents");
         console.error(err);
@@ -81,7 +110,7 @@ export function DriveBrowser({
         setIsLoading(false);
       }
     },
-    []
+    [navigateAction]
   );
 
   // Initial load

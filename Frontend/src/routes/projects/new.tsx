@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { useAuthStore } from "@/stores/auth";
-import { projectsApi } from "@/lib/api";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { DriveBrowser } from "@/components/drive/DriveBrowser";
 import type { DriveItem } from "@/types/api";
 import { 
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/projects/new")({
 function NewProject() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
+  const createProject = useMutation(api.projects.create);
   
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -40,15 +42,15 @@ function NewProject() {
     
     setIsSubmitting(true);
     try {
-      const project = await projectsApi.create({
+      const projectId = await createProject({
         name: name.trim(),
         description: description.trim() || undefined,
-        drive_folders: selectedFolders.length > 0 
+        driveFolders: selectedFolders.length > 0 
           ? selectedFolders.map(f => ({ id: f.id, name: f.name }))
           : undefined,
       });
       
-      navigate({ to: `/projects/${project.id}` });
+      navigate({ to: `/projects/${projectId}` });
     } catch (error) {
       console.error("Failed to create project:", error);
     } finally {

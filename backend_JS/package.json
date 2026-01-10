@@ -1,0 +1,23 @@
+{
+  "name": "meetings-to-document-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "logs": "convex logs"
+  },
+  "dependencies": {
+    "20": "^3.1.9",
+    "@auth/core": "^0.37.4",
+    "@convex-dev/auth": "^0.0.80",
+    "assemblyai": "^4.8.0",
+    "convex": "^1.21.0",
+    "googleapis": "^144.0.0",
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

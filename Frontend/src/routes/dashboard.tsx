@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/stores/auth";
-import { projectsApi } from "@/lib/api";
-import type { Project } from "@/types/api";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { 
   Plus, 
   Folder, 
@@ -31,14 +31,27 @@ export const Route = createFileRoute("/dashboard")({
 function Dashboard() {
   const navigate = useNavigate();
   const { tab } = Route.useSearch();
-  const { user, isAuthenticated, logout, checkAuth } = useAuthStore();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user, isAuthenticated, isUserReady, logout } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabStatus>(tab || "ACTIVE");
 
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+  const statusFilter = activeTab === "ACTIVE" ? "active" : "archived";
+  const convexProjects = useQuery(
+    api.projects.list, 
+    isUserReady ? { status: statusFilter as "active" | "archived" } : "skip"
+  );
+  
+  const projects = (convexProjects ?? []).map((p) => ({
+    id: p._id,
+    name: p.name,
+    description: p.description ?? null,
+    status: p.status.toUpperCase() as "ACTIVE" | "ARCHIVED",
+    schema_type: p.schemaType,
+    drive_folders: p.driveFolders ?? [],
+    created_at: new Date(p._creationTime).toISOString(),
+    updated_at: new Date(p._creationTime).toISOString(),
+  }));
+  
+  const isLoading = !isUserReady || convexProjects === undefined;
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -46,31 +59,12 @@ function Dashboard() {
     }
   }, [isAuthenticated, navigate]);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadProjects(activeTab);
-    }
-  }, [isAuthenticated, activeTab]);
-
-  const loadProjects = async (tab: TabStatus) => {
-    try {
-      setIsLoading(true);
-      const statusFilter = tab === "ACTIVE" ? "active" : "archived";
-      const response = await projectsApi.list(1, 50, statusFilter);
-      setProjects(response.items);
-    } catch (error) {
-      console.error("Failed to load projects:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleLogout = async () => {
     await logout();
     navigate({ to: "/" });
   };
 
-  const getStatusBadge = (status: Project["status"]) => {
+  const getStatusBadge = (status: "ACTIVE" | "ARCHIVED") => {
     switch (status) {
       case "ACTIVE":
         return <Badge variant="secondary">Active</Badge>;
