@@ -847,8 +847,8 @@ function ProjectDetail() {
                       <>
                         <Play className="h-4 w-4 mr-2" />
                         {videoFileCount === 0
-                          ? "Select videos to process"
-                          : `Process ${videoFileCount} video${videoFileCount > 1 ? "s" : ""}`}
+                          ? "Select videos to extract"
+                          : `Extract ${videoFileCount} video${videoFileCount > 1 ? "s" : ""}`}
                       </>
                     )}
                   </Button>
@@ -864,14 +864,14 @@ function ProjectDetail() {
         )}
 
         <section>
-          <h2 className="text-xl font-semibold mb-4">Processing Jobs</h2>
+          <h2 className="text-xl font-semibold mb-4">Extraction Jobs</h2>
           {(jobs ?? []).length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center">
-                <SpinnerGap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">
-                  No processing jobs yet. Start processing to generate
-                  documents.
+                  No extraction jobs yet. Start an extraction to generate
+                  transcripts and key ideas.
                 </p>
               </CardContent>
             </Card>
@@ -898,7 +898,13 @@ function ProjectDetail() {
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                       {job.currentStage && (
                         <div className="flex items-center gap-2">
-                          <SpinnerGap className="h-4 w-4 animate-spin" />
+                          {job.status === "completed" ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : job.status === "failed" ? (
+                            <XCircle className="h-4 w-4 text-destructive" />
+                          ) : (
+                            <SpinnerGap className="h-4 w-4 animate-spin" />
+                          )}
                           <span>Stage: {job.currentStage}</span>
                         </div>
                       )}
@@ -988,97 +994,93 @@ function ProjectDetail() {
               <CardContent className="py-8 text-center">
                 <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">
-                  No extractions yet. Complete a processing job to see transcripts and key ideas here.
+                  No extractions yet. Complete an extraction job to see transcripts and key ideas here.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
+            <div className="grid grid-cols-3 xl:grid-cols-4 gap-4">
               {completedJobs.map((job) =>
                 job.extractionResult?.files
                   ?.filter((file: any) => file.status === "completed")
                   .map((file: any) => (
-                    <div key={`${job._id}-${file.fileId}`} className="space-y-3">
-                      <Card>
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-5 w-5 text-blue-500" weight="duotone" />
-                              <div>
-                                <CardTitle className="text-base">Transcript</CardTitle>
-                                <CardDescription className="text-xs">
-                                  {file.fileName}
-                                </CardDescription>
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setViewingContent({
-                                  type: 'transcript',
-                                  fileName: file.fileName,
-                                  content: file.transcription?.text || "No transcript available",
-                                  utterances: file.transcription?.utterances
-                                })}
-                              >
-                                <Eye className="h-4 w-4 mr-2" />
-                                View
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => downloadTranscript(file.fileName, file.transcription?.text || "")}
-                                disabled={!file.transcription?.text}
-                              >
-                                <DownloadSimple className="h-4 w-4 mr-2" />
-                                Download
-                              </Button>
-                            </div>
+                    <Card key={`${job._id}-${file.fileId}`}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center gap-2">
+                          <Video className="h-5 w-5 text-purple-500 shrink-0" weight="duotone" />
+                          <CardTitle 
+                            className="text-sm font-medium truncate" 
+                            title={file.fileName}
+                          >
+                            {file.fileName.length > 80 
+                              ? `${file.fileName.slice(0, 80)}...` 
+                              : file.fileName}
+                          </CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-2 pt-0">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <FileText className="h-4 w-4 text-blue-500" weight="duotone" />
+                            <span>Transcript</span>
                           </div>
-                        </CardHeader>
-                      </Card>
-
-                      <Card>
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-5 w-5 text-purple-500" weight="duotone" />
-                              <div>
-                                <CardTitle className="text-base">Key Ideas Extracted</CardTitle>
-                                <CardDescription className="text-xs">
-                                  {file.fileName}
-                                </CardDescription>
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setViewingContent({
-                                  type: 'extraction',
-                                  fileName: file.fileName,
-                                  content: JSON.stringify(file.extraction || {}, null, 2),
-                                  extractionData: file.extraction
-                                })}
-                              >
-                                <Eye className="h-4 w-4 mr-2" />
-                                View
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => downloadExtraction(file.fileName, file.extraction || {})}
-                                disabled={!file.extraction}
-                              >
-                                <DownloadSimple className="h-4 w-4 mr-2" />
-                                Download
-                              </Button>
-                            </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => setViewingContent({
+                                type: 'transcript',
+                                fileName: file.fileName,
+                                content: file.transcription?.text || "No transcript available",
+                                utterances: file.transcription?.utterances
+                              })}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => downloadTranscript(file.fileName, file.transcription?.text || "")}
+                              disabled={!file.transcription?.text}
+                            >
+                              <DownloadSimple className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
-                        </CardHeader>
-                      </Card>
-                    </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <FileText className="h-4 w-4 text-purple-500" weight="duotone" />
+                            <span>Key Ideas</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => setViewingContent({
+                                type: 'extraction',
+                                fileName: file.fileName,
+                                content: JSON.stringify(file.extraction || {}, null, 2),
+                                extractionData: file.extraction
+                              })}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => downloadExtraction(file.fileName, file.extraction || {})}
+                              disabled={!file.extraction}
+                            >
+                              <DownloadSimple className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   ))
               )}
             </div>
