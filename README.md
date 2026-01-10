@@ -1,33 +1,33 @@
 # MeetingsToDocument
 
-AI-powered application that transforms meeting recordings from Google Drive into structured Zuora Solution Design Documents.
+AI-powered application that transforms meeting recordings from Google Drive into structured documents.
 
 ## Features
 
 - Google OAuth integration with Drive access
 - Browse and select meeting recordings from Shared Drives
 - AI-powered transcription (AssemblyAI)
-- Video analysis (Google Gemini 2.0 Flash)
-- Document synthesis and generation (GPT-4o)
-- Section review loop (Claude)
+- Structured information extraction (OpenAI GPT-4o)
+- Real-time updates across all connected clients
 - Export to Google Docs
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | Python 3.12, FastAPI, SQLAlchemy (async), Celery |
-| **Frontend** | React 19, TanStack Router/Start, Tailwind v4, shadcn/ui, Zustand |
-| **Database** | PostgreSQL 16 |
-| **Queue** | Redis 7 |
-| **AI** | OpenAI GPT-4o, Anthropic Claude, Google Gemini, AssemblyAI |
+| **Backend** | Convex (database, functions, real-time sync) |
+| **Frontend** | React 19, TanStack Router, Tailwind v4, shadcn/ui |
+| **Auth** | Convex Auth with Google OAuth |
+| **AI** | OpenAI GPT-4o, AssemblyAI |
+| **Storage** | Google Drive API |
 
 ## Prerequisites
 
-- **Docker & Docker Compose** - For PostgreSQL and Redis
-- **Python 3.12+** with [uv](https://docs.astral.sh/uv/) package manager
 - **Node.js 18+** with [bun](https://bun.sh/) package manager
+- **Convex account** - [convex.dev](https://convex.dev)
 - **Google Cloud Console project** with OAuth 2.0 credentials
+- **AssemblyAI API key** - [assemblyai.com](https://assemblyai.com)
+- **OpenAI API key** - [platform.openai.com](https://platform.openai.com)
 
 ## Quick Start
 
@@ -42,67 +42,48 @@ cd MeetingsToDocumet
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select an existing one
-3. Enable these APIs:
-   - Google Drive API
-   - Google Docs API
+3. Enable the Google Drive API
 4. Go to **APIs & Services > Credentials**
 5. Click **Create Credentials > OAuth 2.0 Client IDs**
 6. Configure the OAuth consent screen if prompted
 7. Set application type to **Web application**
-8. Add authorized redirect URIs:
-   - `http://localhost:3000/` (for frontend callback)
+8. Add authorized redirect URIs (check Convex Auth docs for specifics)
 9. Copy the **Client ID** and **Client Secret**
 
-### 3. Start Database Services
+### 3. Set Up Backend (Convex)
 
 ```bash
-cd Backend
-docker compose up -d
-```
-
-This starts:
-- PostgreSQL on port 5432
-- Redis on port 6379
-
-### 4. Set Up Backend
-
-```bash
-cd Backend
-
-# Install uv if you haven't
-curl -LsSf https://astral.sh/uv/install.sh | sh
+cd backend_JS
 
 # Install dependencies
-uv sync
+bun install
 
 # Copy and configure environment
-cp .env.example .env
-# Edit .env with your API keys (see Environment Variables section)
+cp .env.example .env.local
+# Edit .env.local with your API keys
 
-# Run database migrations
-uv run alembic upgrade head
-
-# Start the backend server
-uv run uvicorn app.main:app --reload --port 8000
+# Start Convex dev server (will prompt for login/project setup)
+bunx convex dev
 ```
 
-Backend will be available at http://localhost:8000
+Add these environment variables in the Convex dashboard:
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `ASSEMBLYAI_API_KEY`
+- `OPENAI_API_KEY`
 
-### 5. Set Up Frontend
+### 4. Set Up Frontend
 
 In a new terminal:
 
 ```bash
 cd Frontend
 
-# Install bun if you haven't
-curl -fsSL https://bun.sh/install | bash
-
 # Install dependencies
 bun install
 
 # Create environment file
-echo "VITE_API_URL=http://localhost:8000" > .env
+echo "VITE_CONVEX_URL=<your-convex-url>" > .env
 
 # Start the frontend dev server
 bun run dev
@@ -110,110 +91,57 @@ bun run dev
 
 Frontend will be available at http://localhost:3000
 
-### 6. Start Celery Worker (Optional - for AI processing)
-
-In a new terminal:
-
-```bash
-cd Backend
-uv run celery -A workers.celery_app worker -l info -Q processing,default
-```
-
-## Environment Variables
-
-### Backend (`Backend/.env`)
-
-```bash
-# Required - Google OAuth
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret
-
-# Required - AI API Keys
-OPENAI_API_KEY=sk-your-openai-key
-ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
-GOOGLE_AI_API_KEY=your-google-ai-key
-ASSEMBLYAI_API_KEY=your-assemblyai-key
-
-# Database (defaults work with docker-compose)
-DATABASE_URL=postgresql+asyncpg://mtd_user:mtd_password@localhost:5432/meetingstodoc
-
-# Redis (defaults work with docker-compose)
-REDIS_URL=redis://localhost:6379/0
-
-# Security (change in production)
-SECRET_KEY=your-secret-key-at-least-32-characters-long
-```
-
-### Frontend (`Frontend/.env`)
-
-```bash
-VITE_API_URL=http://localhost:8000
-```
-
 ## Project Structure
 
 ```
 MeetingsToDocumet/
-├── Backend/
-│   ├── app/
-│   │   ├── api/           # FastAPI routes
-│   │   ├── core/          # Utilities, logging, security
-│   │   ├── db/            # Database connection
-│   │   ├── models/        # SQLAlchemy models
-│   │   ├── schemas/       # Pydantic schemas
-│   │   ├── services/      # Business logic
-│   │   ├── config.py      # Settings
-│   │   └── main.py        # FastAPI app
-│   ├── workers/
-│   │   ├── ai_pipeline/   # CrewAI agents (TODO)
-│   │   ├── tasks/         # Celery tasks
-│   │   └── celery_app.py
-│   ├── alembic/           # Database migrations
-│   ├── docker-compose.yml
-│   ├── pyproject.toml
+├── backend_JS/
+│   ├── convex/
+│   │   ├── _generated/       # Auto-generated Convex files
+│   │   ├── schema.ts         # Database schema
+│   │   ├── auth.ts           # Auth configuration
+│   │   ├── users.ts          # User queries/mutations
+│   │   ├── projects.ts       # Project CRUD
+│   │   ├── jobs.ts           # Job processing
+│   │   ├── documents.ts      # Document management
+│   │   ├── actions/          # External API integrations
+│   │   │   └── drive.ts      # Google Drive API
+│   │   └── lib/              # Shared utilities
+│   ├── package.json
 │   └── .env.example
 │
 ├── Frontend/
 │   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── lib/           # API client, utilities
-│   │   ├── routes/        # TanStack Router pages
-│   │   ├── stores/        # Zustand stores
-│   │   └── types/         # TypeScript types
-│   ├── public/
+│   │   ├── components/       # React components
+│   │   ├── lib/              # Utilities
+│   │   ├── routes/           # TanStack Router pages
+│   │   ├── stores/           # State management
+│   │   └── types/            # TypeScript types
+│   ├── convex/               # Symlink to backend_JS/convex
 │   ├── package.json
 │   └── vite.config.ts
 │
-└── README.md              # This file
+└── README.md
 ```
-
-## API Documentation
-
-Once the backend is running:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
 
 ## Development Commands
 
-### Backend
+### Backend (Convex)
 
 ```bash
-cd Backend
+cd backend_JS
 
-# Start server
-uv run uvicorn app.main:app --reload
+# Start dev server with hot reload
+bunx convex dev
 
-# Run migrations
-uv run alembic upgrade head
+# Deploy to production
+bunx convex deploy
 
-# Create new migration
-uv run alembic revision --autogenerate -m "description"
+# View logs
+bunx convex logs
 
-# Add dependency
-uv add <package-name>
-
-# Start Celery worker
-uv run celery -A workers.celery_app worker -l info
+# Open dashboard
+bunx convex dashboard
 ```
 
 ### Frontend
@@ -231,37 +159,21 @@ bun run build
 bun add <package-name>
 ```
 
-### Docker Services
+## Processing Pipeline
 
-```bash
-cd Backend
-
-# Start services
-docker compose up -d
-
-# Stop services
-docker compose down
-
-# Reset data
-docker compose down -v
-
-# View logs
-docker compose logs -f postgres
-```
+1. **Select Files** - User browses Google Drive and selects video files
+2. **Create Job** - Job created in Convex database
+3. **Transcription** - AssemblyAI processes audio with speaker diarization
+4. **Extraction** - GPT-4o extracts structured information (decisions, action items, etc.)
+5. **Complete** - Results stored, UI updates in real-time
 
 ## Troubleshooting
 
-### "redirect_uri_mismatch" error
-Add `http://localhost:3000/` to your Google Cloud Console authorized redirect URIs.
+### "Invalid redirect URI" error
+Check your Google Cloud Console OAuth settings match your Convex auth configuration.
 
-### "invalid_client" error
-Check that `GOOGLE_CLIENT_SECRET` in `.env` is correct (not the placeholder value).
+### Convex connection issues
+Make sure `VITE_CONVEX_URL` in Frontend/.env matches your Convex deployment URL.
 
-### Database connection errors
-Make sure Docker is running: `docker compose up -d`
-
-### Port already in use
-- Backend default: 8000
-- Frontend default: 3000
-- PostgreSQL: 5432
-- Redis: 6379
+### Google Drive access issues
+Ensure the Google Drive API is enabled and OAuth scopes include Drive access.
