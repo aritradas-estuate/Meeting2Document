@@ -130,9 +130,6 @@ export const create = mutation({
       supportingFiles: args.supportingFiles,
       currentStage: undefined,
       stageProgress: undefined,
-      transcripts: [],
-      extractionResult: undefined,
-      synthesisResult: undefined,
       errorMessage: undefined,
       startedAt: undefined,
       completedAt: undefined,
@@ -183,8 +180,6 @@ export const retry = mutation({
       errorMessage: undefined,
       currentStage: undefined,
       stageProgress: undefined,
-      transcripts: [],
-      extractionResult: undefined,
       startedAt: undefined,
       completedAt: undefined,
     });
@@ -200,6 +195,26 @@ export const startProcessing = internalMutation({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Job not found");
+
+    for (const file of job.videoFiles) {
+      const transcriptId = await ctx.db.insert("transcripts", {
+        jobId: args.jobId,
+        projectId: job.projectId,
+        fileId: file.id,
+        fileName: file.name,
+        fileSize: file.size,
+        status: "pending",
+      });
+
+      await ctx.db.insert("keyIdeas", {
+        jobId: args.jobId,
+        projectId: job.projectId,
+        transcriptId,
+        fileId: file.id,
+        fileName: file.name,
+        status: "pending",
+      });
+    }
 
     await ctx.db.patch(args.jobId, {
       status: "transcribing",
@@ -243,69 +258,6 @@ export const updateStatus = internalMutation({
   },
 });
 
-export const addTranscriptId = internalMutation({
-  args: {
-    jobId: v.id("jobs"),
-    fileId: v.string(),
-    fileName: v.string(),
-    transcriptId: v.string(),
-    publicUrl: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.jobId);
-    if (!job) throw new Error("Job not found");
-
-    const transcripts = job.transcripts || [];
-    transcripts.push({
-      fileId: args.fileId,
-      fileName: args.fileName,
-      transcriptId: args.transcriptId,
-      status: "queued",
-      publicUrl: args.publicUrl,
-    });
-
-    await ctx.db.patch(args.jobId, { transcripts });
-  },
-});
-
-export const updateTranscriptStatus = internalMutation({
-  args: {
-    jobId: v.id("jobs"),
-    transcriptId: v.string(),
-    status: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.jobId);
-    if (!job) throw new Error("Job not found");
-
-    const transcripts = (job.transcripts || []).map((t) =>
-      t.transcriptId === args.transcriptId ? { ...t, status: args.status } : t
-    );
-
-    await ctx.db.patch(args.jobId, { transcripts });
-  },
-});
-
-export const saveExtractionResult = internalMutation({
-  args: {
-    jobId: v.id("jobs"),
-    extractionResult: v.any(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.jobId, {
-      extractionResult: args.extractionResult,
-      status: "completed",
-      currentStage: "completed",
-      completedAt: Date.now(),
-      stageProgress: {
-        stage: "completed",
-        progress: 100,
-        message: "Processing complete!",
-      },
-    });
-  },
-});
-
 export const getByIdInternal = internalQuery({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, args) => {
@@ -313,20 +265,40 @@ export const getByIdInternal = internalQuery({
   },
 });
 
-export const findByTranscriptId = internalQuery({
-  args: { transcriptId: v.string() },
+export const checkCompletion = internalMutation({
+  args: { jobId: v.id("jobs") },
   handler: async (ctx, args) => {
-    const jobs = await ctx.db.query("jobs").collect();
+    const keyIdeas = await ctx.db
+      .query("keyIdeas")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .collect();
 
-    for (const job of jobs) {
-      const transcript = (job.transcripts || []).find(
-        (t) => t.transcriptId === args.transcriptId
-      );
-      if (transcript) {
-        return { job, transcript };
-      }
+    if (keyIdeas.length === 0) return;
+
+    const allCompleted = keyIdeas.every(
+      (k) => k.status === "completed" || k.status === "failed"
+    );
+
+    if (allCompleted) {
+      const anyFailed = keyIdeas.some((k) => k.status === "failed");
+      const transcripts = await ctx.db
+        .query("transcripts")
+        .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+        .collect();
+      const transcriptsFailed = transcripts.some((t) => t.status === "failed");
+
+      await ctx.db.patch(args.jobId, {
+        status: anyFailed || transcriptsFailed ? "failed" : "completed",
+        completedAt: Date.now(),
+        currentStage: "completed",
+        stageProgress: {
+          stage: "completed",
+          progress: 100,
+          message: anyFailed || transcriptsFailed
+            ? "Completed with some failures"
+            : "Processing complete!",
+        },
+      });
     }
-
-    return null;
   },
 });

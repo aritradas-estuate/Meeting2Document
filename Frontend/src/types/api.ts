@@ -56,3 +56,39 @@ export interface MeetingExtraction {
   topics_discussed: Array<{ topic: string; duration_estimate: string }>;
   follow_ups: Array<{ item: string; owner: string }>;
 }
+
+export type TranscriptStatus = "pending" | "transcribing" | "completed" | "failed";
+export type ExtractionStatus = "pending" | "extracting" | "completed" | "failed";
+
+export interface Transcript {
+  _id: string;
+  _creationTime: number;
+  jobId: string;
+  projectId: string;
+  fileId: string;
+  fileName: string;
+  fileSize?: number;
+  status: TranscriptStatus;
+  assemblyAiTranscriptId?: string;
+  publicUrl?: string;
+  text?: string;
+  utterances?: Utterance[];
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+export interface KeyIdea {
+  _id: string;
+  _creationTime: number;
+  jobId: string;
+  projectId: string;
+  transcriptId: string;
+  fileId: string;
+  fileName: string;
+  status: ExtractionStatus;
+  extraction?: MeetingExtraction;
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+}

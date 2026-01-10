@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -230,6 +230,8 @@ function ProjectDetail() {
   const project = useQuery(api.projects.get, isUserReady ? { projectId: convexProjectId } : "skip");
   const jobs = useQuery(api.jobs.list, isUserReady ? { projectId: convexProjectId } : "skip");
   const documents = useQuery(api.documents.list, isUserReady ? { projectId: convexProjectId } : "skip");
+  const transcripts = useQuery(api.transcripts.list, isUserReady ? { projectId: convexProjectId } : "skip");
+  const keyIdeasList = useQuery(api.keyIdeas.list, isUserReady ? { projectId: convexProjectId } : "skip");
   
   const archiveProject = useMutation(api.projects.archive);
   const restoreProject = useMutation(api.projects.restore);
@@ -250,8 +252,7 @@ function ProjectDetail() {
   const [selectedFiles, setSelectedFiles] = useState<DriveItem[]>([]);
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [isStartingProcessing, setIsStartingProcessing] = useState(false);
-  const [viewingJobResults, setViewingJobResults] = useState<any | null>(null);
-  const [isLoadingResults, setIsLoadingResults] = useState(false);
+
   const [viewingContent, setViewingContent] = useState<{
     type: 'transcript' | 'extraction';
     fileName: string;
@@ -264,7 +265,14 @@ function ProjectDetail() {
   const error = isUserReady && project === null ? "Project not found" : null;
   const isArchived = project?.status === "archived";
   
-  const completedJobs = (jobs ?? []).filter(j => j.status === "completed");
+  const extractions = useMemo(() => {
+    if (!transcripts || !keyIdeasList) return [];
+    
+    return transcripts.map((transcript: any) => ({
+      transcript,
+      keyIdea: keyIdeasList.find((k: any) => k.transcriptId === transcript._id),
+    }));
+  }, [transcripts, keyIdeasList]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -431,10 +439,6 @@ function ProjectDetail() {
     } finally {
       setIsStartingProcessing(false);
     }
-  };
-
-  const handleViewResults = (job: any) => {
-    setViewingJobResults(job);
   };
 
   const downloadTranscript = (fileName: string, content: string) => {
@@ -947,23 +951,8 @@ function ProjectDetail() {
                       </div>
                     </div>
 
-                    <div className="mt-4 flex gap-2">
-                      {job.status === "completed" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewResults(job)}
-                          disabled={isLoadingResults}
-                        >
-                          {isLoadingResults ? (
-                            <SpinnerGap className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Eye className="h-4 w-4 mr-2" />
-                          )}
-                          View Results
-                        </Button>
-                      )}
-                      {job.status === "failed" && (
+                    {job.status === "failed" && (
+                      <div className="mt-4">
                         <Button
                           variant="outline"
                           size="sm"
@@ -978,8 +967,8 @@ function ProjectDetail() {
                           <ArrowClockwise className="h-4 w-4 mr-2" />
                           Retry
                         </Button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -989,41 +978,49 @@ function ProjectDetail() {
 
         <section>
           <h2 className="text-xl font-semibold mb-4">Extractions</h2>
-          {completedJobs.length === 0 ? (
+          {extractions.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center">
                 <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">
-                  No extractions yet. Complete an extraction job to see transcripts and key ideas here.
+                  No extractions yet. Start an extraction job to see transcripts and key ideas here.
                 </p>
               </CardContent>
             </Card>
           ) : (
             <div className="grid grid-cols-3 xl:grid-cols-4 gap-4">
-              {completedJobs.map((job) =>
-                job.extractionResult?.files
-                  ?.filter((file: any) => file.status === "completed")
-                  .map((file: any) => (
-                    <Card key={`${job._id}-${file.fileId}`}>
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center gap-2">
-                          <Video className="h-5 w-5 text-purple-500 shrink-0" weight="duotone" />
-                          <CardTitle 
-                            className="text-sm font-medium truncate" 
-                            title={file.fileName}
-                          >
-                            {file.fileName.length > 80 
-                              ? `${file.fileName.slice(0, 80)}...` 
-                              : file.fileName}
-                          </CardTitle>
+              {extractions.map(({ transcript, keyIdea }: { transcript: any; keyIdea: any }) => {
+                const isInProgress = transcript.status !== "completed" && transcript.status !== "failed" ||
+                  (keyIdea && keyIdea.status !== "completed" && keyIdea.status !== "failed");
+                
+                return (
+                  <Card key={transcript._id}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center gap-2">
+                        <Video className="h-5 w-5 text-purple-500 shrink-0" weight="duotone" />
+                        <CardTitle 
+                          className="text-sm font-medium truncate flex-1" 
+                          title={transcript.fileName}
+                        >
+                          {transcript.fileName.length > 80 
+                            ? `${transcript.fileName.slice(0, 80)}...` 
+                            : transcript.fileName}
+                        </CardTitle>
+                        {isInProgress && (
+                          <Badge variant="outline" className="shrink-0 text-xs">
+                            <SpinnerGap className="h-3 w-3 mr-1 animate-spin" />
+                            In Progress
+                          </Badge>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2 pt-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <FileText className="h-4 w-4 text-blue-500" weight="duotone" />
+                          <span>Transcript</span>
                         </div>
-                      </CardHeader>
-                      <CardContent className="space-y-2 pt-0">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <FileText className="h-4 w-4 text-blue-500" weight="duotone" />
-                            <span>Transcript</span>
-                          </div>
+                        {transcript.status === "completed" ? (
                           <div className="flex gap-1">
                             <Button
                               variant="ghost"
@@ -1031,9 +1028,9 @@ function ProjectDetail() {
                               className="h-7 w-7 p-0"
                               onClick={() => setViewingContent({
                                 type: 'transcript',
-                                fileName: file.fileName,
-                                content: file.transcription?.text || "No transcript available",
-                                utterances: file.transcription?.utterances
+                                fileName: transcript.fileName,
+                                content: transcript.text || "No transcript available",
+                                utterances: transcript.utterances
                               })}
                             >
                               <Eye className="h-3.5 w-3.5" />
@@ -1042,18 +1039,27 @@ function ProjectDetail() {
                               variant="ghost"
                               size="sm"
                               className="h-7 w-7 p-0"
-                              onClick={() => downloadTranscript(file.fileName, file.transcription?.text || "")}
-                              disabled={!file.transcription?.text}
+                              onClick={() => downloadTranscript(transcript.fileName, transcript.text || "")}
+                              disabled={!transcript.text}
                             >
                               <DownloadSimple className="h-3.5 w-3.5" />
                             </Button>
                           </div>
+                        ) : transcript.status === "failed" ? (
+                          <Badge variant="destructive" className="text-xs">Failed</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">
+                            <SpinnerGap className="h-3 w-3 mr-1 animate-spin" />
+                            {transcript.status === "transcribing" ? "Transcribing" : "Pending"}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <FileText className="h-4 w-4 text-purple-500" weight="duotone" />
+                          <span>Key Ideas</span>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <FileText className="h-4 w-4 text-purple-500" weight="duotone" />
-                            <span>Key Ideas</span>
-                          </div>
+                        {keyIdea?.status === "completed" ? (
                           <div className="flex gap-1">
                             <Button
                               variant="ghost"
@@ -1061,9 +1067,9 @@ function ProjectDetail() {
                               className="h-7 w-7 p-0"
                               onClick={() => setViewingContent({
                                 type: 'extraction',
-                                fileName: file.fileName,
-                                content: JSON.stringify(file.extraction || {}, null, 2),
-                                extractionData: file.extraction
+                                fileName: transcript.fileName,
+                                content: JSON.stringify(keyIdea.extraction || {}, null, 2),
+                                extractionData: keyIdea.extraction
                               })}
                             >
                               <Eye className="h-3.5 w-3.5" />
@@ -1072,17 +1078,25 @@ function ProjectDetail() {
                               variant="ghost"
                               size="sm"
                               className="h-7 w-7 p-0"
-                              onClick={() => downloadExtraction(file.fileName, file.extraction || {})}
-                              disabled={!file.extraction}
+                              onClick={() => downloadExtraction(transcript.fileName, keyIdea.extraction || {})}
+                              disabled={!keyIdea.extraction}
                             >
                               <DownloadSimple className="h-3.5 w-3.5" />
                             </Button>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-              )}
+                        ) : keyIdea?.status === "failed" ? (
+                          <Badge variant="destructive" className="text-xs">Failed</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">
+                            <SpinnerGap className="h-3 w-3 mr-1 animate-spin" />
+                            {keyIdea?.status === "extracting" ? "Extracting" : "Pending"}
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </section>
@@ -1215,89 +1229,6 @@ function ProjectDetail() {
         </div>
       )}
 
-      {viewingJobResults && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div 
-            className="absolute inset-0 bg-black/50" 
-            onClick={() => setViewingJobResults(null)}
-          />
-          <div className="relative bg-background rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-hidden mx-4">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">
-                Job #{viewingJobResults.id} Results
-              </h2>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setViewingJobResults(null)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(90vh-80px)]">
-              {viewingJobResults.extractionResult?.files.map((file: any, idx: number) => (
-                <div key={idx} className="mb-6">
-                  <h3 className="text-md font-semibold mb-2 flex items-center gap-2">
-                    <Video className="h-4 w-4" />
-                    {file.fileName}
-                    {file.status === "completed" ? (
-                      <Badge className="bg-green-500">Completed</Badge>
-                    ) : (
-                      <Badge variant="destructive">Failed</Badge>
-                    )}
-                  </h3>
-                  
-                  {file.error && (
-                    <div className="text-destructive text-sm mb-2">
-                      Error: {file.error}
-                    </div>
-                  )}
-
-                  {file.transcription && (
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium mb-2">Transcript</h4>
-                      <div className="bg-muted p-3 rounded-lg text-sm max-h-64 overflow-y-auto">
-                        {file.transcription.utterances && file.transcription.utterances.length > 0 ? (
-                          <div className="space-y-3">
-                            {file.transcription.utterances.map((utterance: any, uIdx: number) => (
-                              <div key={uIdx} className="flex gap-3">
-                                <span className="font-semibold text-primary shrink-0 min-w-[80px]">
-                                  Speaker {utterance.speaker}:
-                                </span>
-                                <span className="text-foreground">{utterance.text}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <pre className="whitespace-pre-wrap">{file.transcription.text}</pre>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {file.extraction && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">AI Extraction</h4>
-                      <div className="bg-muted p-3 rounded-lg text-sm max-h-64 overflow-y-auto">
-                        <pre className="whitespace-pre-wrap">
-                          {JSON.stringify(file.extraction, null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {(!viewingJobResults.extractionResult?.files || 
-                viewingJobResults.extractionResult.files.length === 0) && (
-                <div className="text-center text-muted-foreground py-8">
-                  No extraction results available
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

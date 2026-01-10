@@ -15,8 +15,10 @@ import type * as auth from "../auth.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
 import type * as jobs from "../jobs.js";
+import type * as keyIdeas from "../keyIdeas.js";
 import type * as lib_prompts from "../lib/prompts.js";
 import type * as projects from "../projects.js";
+import type * as transcripts from "../transcripts.js";
 import type * as users from "../users.js";
 
 import type {
@@ -33,8 +35,10 @@ declare const fullApi: ApiFromModules<{
   documents: typeof documents;
   http: typeof http;
   jobs: typeof jobs;
+  keyIdeas: typeof keyIdeas;
   "lib/prompts": typeof lib_prompts;
   projects: typeof projects;
+  transcripts: typeof transcripts;
   users: typeof users;
 }>;
 

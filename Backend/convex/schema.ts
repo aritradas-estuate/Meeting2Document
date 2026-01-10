@@ -47,6 +47,20 @@ const sectionStatusValidator = v.union(
   v.literal("skipped")
 );
 
+const transcriptStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("transcribing"),
+  v.literal("completed"),
+  v.literal("failed")
+);
+
+const extractionStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("extracting"),
+  v.literal("completed"),
+  v.literal("failed")
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -78,13 +92,6 @@ export default defineSchema({
     status: jobStatusValidator,
     videoFiles: v.array(driveFileValidator),
     supportingFiles: v.optional(v.array(driveFileValidator)),
-    transcripts: v.optional(v.array(v.object({
-      fileId: v.string(),
-      fileName: v.string(),
-      transcriptId: v.string(),
-      status: v.string(),
-      publicUrl: v.optional(v.string()),
-    }))),
     currentStage: v.optional(v.string()),
     stageProgress: v.optional(v.object({
       stage: v.string(),
@@ -93,35 +100,6 @@ export default defineSchema({
       filesCompleted: v.optional(v.number()),
       totalFiles: v.optional(v.number()),
     })),
-    extractionResult: v.optional(v.object({
-      files: v.array(v.object({
-        fileId: v.string(),
-        fileName: v.string(),
-        fileSize: v.optional(v.number()),
-        status: v.string(),
-        error: v.optional(v.string()),
-        transcription: v.optional(v.object({
-          text: v.string(),
-          utterances: v.optional(v.array(v.object({
-            speaker: v.string(),
-            text: v.string(),
-            start: v.number(),
-            end: v.number(),
-          }))),
-        })),
-        extraction: v.optional(v.any()),
-      })),
-      metadata: v.object({
-        startedAt: v.string(),
-        completedAt: v.optional(v.string()),
-        modelsUsed: v.object({
-          transcription: v.string(),
-          extraction: v.string(),
-        }),
-        totalFilesProcessed: v.optional(v.number()),
-      }),
-    })),
-    synthesisResult: v.optional(v.any()),
     errorMessage: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
@@ -129,6 +107,47 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_status", ["status"])
     .index("by_project_status", ["projectId", "status"]),
+
+  transcripts: defineTable({
+    jobId: v.id("jobs"),
+    projectId: v.id("projects"),
+    fileId: v.string(),
+    fileName: v.string(),
+    fileSize: v.optional(v.number()),
+    status: transcriptStatusValidator,
+    assemblyAiTranscriptId: v.optional(v.string()),
+    publicUrl: v.optional(v.string()),
+    text: v.optional(v.string()),
+    utterances: v.optional(v.array(v.object({
+      speaker: v.string(),
+      text: v.string(),
+      start: v.number(),
+      end: v.number(),
+    }))),
+    error: v.optional(v.string()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_job", ["jobId"])
+    .index("by_project", ["projectId"])
+    .index("by_file", ["fileId"])
+    .index("by_assemblyai_id", ["assemblyAiTranscriptId"]),
+
+  keyIdeas: defineTable({
+    jobId: v.id("jobs"),
+    projectId: v.id("projects"),
+    transcriptId: v.id("transcripts"),
+    fileId: v.string(),
+    fileName: v.string(),
+    status: extractionStatusValidator,
+    extraction: v.optional(v.any()),
+    error: v.optional(v.string()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_job", ["jobId"])
+    .index("by_project", ["projectId"])
+    .index("by_transcript", ["transcriptId"]),
 
   documents: defineTable({
     projectId: v.id("projects"),
