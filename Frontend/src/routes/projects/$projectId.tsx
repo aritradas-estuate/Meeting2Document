@@ -998,7 +998,7 @@ function ProjectDetail() {
                 job.extractionResult?.files
                   ?.filter((file: any) => file.status === "completed")
                   .map((file: any) => (
-                    <div key={`${job._id}-${file.file_id}`} className="space-y-3">
+                    <div key={`${job._id}-${file.fileId}`} className="space-y-3">
                       <Card>
                         <CardHeader className="pb-3">
                           <div className="flex items-center justify-between">
@@ -1007,7 +1007,7 @@ function ProjectDetail() {
                               <div>
                                 <CardTitle className="text-base">Transcript</CardTitle>
                                 <CardDescription className="text-xs">
-                                  {file.file_name}
+                                  {file.fileName}
                                 </CardDescription>
                               </div>
                             </div>
@@ -1017,7 +1017,7 @@ function ProjectDetail() {
                                 size="sm"
                                 onClick={() => setViewingContent({
                                   type: 'transcript',
-                                  fileName: file.file_name,
+                                  fileName: file.fileName,
                                   content: file.transcription?.text || "No transcript available",
                                   utterances: file.transcription?.utterances
                                 })}
@@ -1028,7 +1028,7 @@ function ProjectDetail() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => downloadTranscript(file.file_name, file.transcription?.text || "")}
+                                onClick={() => downloadTranscript(file.fileName, file.transcription?.text || "")}
                                 disabled={!file.transcription?.text}
                               >
                                 <DownloadSimple className="h-4 w-4 mr-2" />
@@ -1047,7 +1047,7 @@ function ProjectDetail() {
                               <div>
                                 <CardTitle className="text-base">Key Ideas Extracted</CardTitle>
                                 <CardDescription className="text-xs">
-                                  {file.file_name}
+                                  {file.fileName}
                                 </CardDescription>
                               </div>
                             </div>
@@ -1057,7 +1057,7 @@ function ProjectDetail() {
                                 size="sm"
                                 onClick={() => setViewingContent({
                                   type: 'extraction',
-                                  fileName: file.file_name,
+                                  fileName: file.fileName,
                                   content: JSON.stringify(file.extraction || {}, null, 2),
                                   extractionData: file.extraction
                                 })}
@@ -1068,7 +1068,7 @@ function ProjectDetail() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => downloadExtraction(file.file_name, file.extraction || {})}
+                                onClick={() => downloadExtraction(file.fileName, file.extraction || {})}
                                 disabled={!file.extraction}
                               >
                                 <DownloadSimple className="h-4 w-4 mr-2" />
@@ -1233,11 +1233,11 @@ function ProjectDetail() {
               </Button>
             </div>
             <div className="p-4 overflow-y-auto max-h-[calc(90vh-80px)]">
-              {viewingJobResults.extraction_result?.files.map((file, idx) => (
+              {viewingJobResults.extractionResult?.files.map((file: any, idx: number) => (
                 <div key={idx} className="mb-6">
                   <h3 className="text-md font-semibold mb-2 flex items-center gap-2">
                     <Video className="h-4 w-4" />
-                    {file.file_name}
+                    {file.fileName}
                     {file.status === "completed" ? (
                       <Badge className="bg-green-500">Completed</Badge>
                     ) : (
@@ -1254,8 +1254,21 @@ function ProjectDetail() {
                   {file.transcription && (
                     <div className="mb-4">
                       <h4 className="text-sm font-medium mb-2">Transcript</h4>
-                      <div className="bg-muted p-3 rounded-lg text-sm max-h-64 overflow-y-auto whitespace-pre-wrap">
-                        {file.transcription.text}
+                      <div className="bg-muted p-3 rounded-lg text-sm max-h-64 overflow-y-auto">
+                        {file.transcription.utterances && file.transcription.utterances.length > 0 ? (
+                          <div className="space-y-3">
+                            {file.transcription.utterances.map((utterance: any, uIdx: number) => (
+                              <div key={uIdx} className="flex gap-3">
+                                <span className="font-semibold text-primary shrink-0 min-w-[80px]">
+                                  Speaker {utterance.speaker}:
+                                </span>
+                                <span className="text-foreground">{utterance.text}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <pre className="whitespace-pre-wrap">{file.transcription.text}</pre>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1273,8 +1286,8 @@ function ProjectDetail() {
                 </div>
               ))}
 
-              {(!viewingJobResults.extraction_result?.files || 
-                viewingJobResults.extraction_result.files.length === 0) && (
+              {(!viewingJobResults.extractionResult?.files || 
+                viewingJobResults.extractionResult.files.length === 0) && (
                 <div className="text-center text-muted-foreground py-8">
                   No extraction results available
                 </div>

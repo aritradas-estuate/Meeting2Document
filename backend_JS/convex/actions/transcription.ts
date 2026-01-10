@@ -196,8 +196,18 @@ export const handleWebhook = internalAction({
 
     const { job } = result;
 
-    if (args.status === "completed" && args.text) {
-      await handleTranscriptCompleted(ctx, job._id, args.transcriptId, args.text);
+    if (args.status === "completed") {
+      // AssemblyAI webhook does NOT include the transcript text
+      // We need to fetch it from the API
+      let transcriptText = args.text;
+      
+      if (!transcriptText) {
+        const client = getClient();
+        const fullTranscript = await client.transcripts.get(args.transcriptId);
+        transcriptText = fullTranscript.text || "";
+      }
+      
+      await handleTranscriptCompleted(ctx, job._id, args.transcriptId, transcriptText);
     } else if (args.status === "error") {
       await handleTranscriptError(ctx, job._id, args.transcriptId, args.error || "Unknown error");
     }

@@ -64,10 +64,20 @@ export const extractAll = internalAction({
 
       try {
         let transcriptText = "";
+        let utterances: Array<{ speaker: string; text: string; start: number; end: number }> = [];
 
         if (transcript.status === "completed") {
           const fullTranscript = await assemblyai.transcripts.get(transcript.transcriptId);
           transcriptText = fullTranscript.text || "";
+          
+          if (fullTranscript.utterances) {
+            utterances = fullTranscript.utterances.map((u) => ({
+              speaker: u.speaker,
+              text: u.text,
+              start: u.start,
+              end: u.end,
+            }));
+          }
         } else if (transcript.status === "error") {
           fileResults.push({
             fileId: transcript.fileId,
@@ -125,6 +135,7 @@ export const extractAll = internalAction({
           status: "completed",
           transcription: {
             text: transcriptText,
+            utterances: utterances.length > 0 ? utterances : undefined,
           },
           extraction,
         });
