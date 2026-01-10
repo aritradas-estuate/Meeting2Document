@@ -3,9 +3,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests
+import tenacity
 
 from app.config import settings
 from app.core.logging import get_logger
+from workers.ai_pipeline.extraction.json_utils import parse_llm_json
 from workers.ai_pipeline.prompts.extraction_prompts import MEETING_EXTRACTION_PROMPT
 
 logger = get_logger(__name__)
@@ -26,14 +28,86 @@ class ExtractionResult:
     raw_response: dict[str, Any]
 
 
+def _create_empty_result() -> ExtractionResult:
+    return ExtractionResult(
+        summary="",
+        decisions=[],
+        action_items=[],
+        key_points=[],
+        questions_raised=[],
+        concerns=[],
+        topics_discussed=[],
+        follow_ups=[],
+        raw_response={},
+    )
+
+
 class InformationExtractor:
-    def __init__(self):
+    def __init__(self) -> None:
         self.api_key = settings.assemblyai_api_key
         self.model = settings.model_extraction
         self.headers = {
             "authorization": self.api_key,
             "content-type": "application/json",
         }
+
+    def _call_llm(self, prompt: str) -> str:
+        response = requests.post(
+            LLM_GATEWAY_URL,
+            headers=self.headers,
+            json={
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an expert at extracting structured information from meeting transcripts. "
+                            "You MUST respond with valid JSON only. Do not include any text before or after the JSON. "
+                            "Do not wrap the JSON in markdown code blocks."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": 4000,
+                "temperature": 0.0,
+            },
+            timeout=120,
+        )
+
+        if response.status_code != 200:
+            raise requests.exceptions.HTTPError(
+                f"LLM Gateway request failed with status {response.status_code}: {response.text}"
+            )
+
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+
+    @tenacity.retry(
+        wait=tenacity.wait_exponential(multiplier=2, min=4, max=30),
+        stop=tenacity.stop_after_attempt(3),
+        retry=tenacity.retry_if_exception_type(
+            (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.HTTPError,
+                json.JSONDecodeError,
+                KeyError,
+            )
+        ),
+        before_sleep=lambda retry_state: logger.warning(
+            "Retrying LLM extraction",
+            attempt=retry_state.attempt_number,
+        ),
+        reraise=True,
+    )
+    def _call_llm_with_retry(self, prompt: str) -> dict[str, Any]:
+        content = self._call_llm(prompt)
+        parsed = parse_llm_json(content)
+
+        if not parsed:
+            raise json.JSONDecodeError("Failed to parse JSON after all strategies", content, 0)
+
+        return parsed
 
     async def extract_from_transcript(
         self,
@@ -49,32 +123,22 @@ class InformationExtractor:
             file_name=file_name,
         )
 
-        response = requests.post(
-            LLM_GATEWAY_URL,
-            headers=self.headers,
-            json={
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 4000,
-            },
-        )
-
-        if response.status_code != 200:
-            raise RuntimeError(f"LLM Gateway request failed: {response.text}")
-
-        result = response.json()
-        content = result["choices"][0]["message"]["content"]
-
         try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            start_idx = content.find("{")
-            end_idx = content.rfind("}") + 1
-            if start_idx != -1 and end_idx > start_idx:
-                parsed = json.loads(content[start_idx:end_idx])
-            else:
-                logger.error("Failed to parse LLM response as JSON", content=content[:500])
-                parsed = {}
+            parsed = self._call_llm_with_retry(prompt)
+        except tenacity.RetryError as e:
+            logger.error(
+                "LLM extraction failed after all retries",
+                file_name=file_name,
+                error=str(e.last_attempt.exception()),
+            )
+            return _create_empty_result()
+        except Exception as e:
+            logger.error(
+                "Unexpected error during LLM extraction",
+                file_name=file_name,
+                error=str(e),
+            )
+            return _create_empty_result()
 
         logger.info("Extraction complete", file_name=file_name)
 

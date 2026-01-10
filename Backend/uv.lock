@@ -2108,6 +2108,7 @@ dependencies = [
     { name = "google-generativeai" },
     { name = "greenlet" },
     { name = "httpx" },
+    { name = "json-repair" },
     { name = "langchain" },
     { name = "langchain-anthropic" },
     { name = "langchain-openai" },
@@ -2123,6 +2124,7 @@ dependencies = [
     { name = "redis" },
     { name = "sqlalchemy" },
     { name = "structlog" },
+    { name = "tenacity" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -2160,6 +2162,7 @@ requires-dist = [
     { name = "greenlet", specifier = ">=3.3.0" },
     { name = "httpx", specifier = ">=0.26.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
+    { name = "json-repair", specifier = ">=0.25.3" },
     { name = "langchain", specifier = ">=0.1.5" },
     { name = "langchain-anthropic", specifier = ">=0.1.1" },
     { name = "langchain-openai", specifier = ">=0.0.5" },
@@ -2181,6 +2184,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.14" },
     { name = "sqlalchemy", specifier = ">=2.0.25" },
     { name = "structlog", specifier = ">=24.1.0" },
+    { name = "tenacity", specifier = ">=9.1.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
 provides-extras = ["dev"]
