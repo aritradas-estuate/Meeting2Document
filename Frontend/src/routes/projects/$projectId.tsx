@@ -22,6 +22,10 @@ import { api } from '../../../convex/_generated/api'
 import { Id } from '../../../convex/_generated/dataModel'
 import { DeleteConfirmationModal } from '@/components/delete-confirmation-modal'
 import { DriveBrowser } from '@/components/drive/DriveBrowser'
+import { SourceSelector } from '@/components/synthesis/SourceSelector'
+import { SectionRecommendations } from '@/components/synthesis/SectionRecommendations'
+import { GenerationProgress } from '@/components/synthesis/GenerationProgress'
+import { DocumentViewer } from '@/components/synthesis/DocumentViewer'
 import type { DriveItem, Utterance, MeetingExtraction } from '@/types/api'
 import {
   ArrowLeft,
@@ -49,6 +53,7 @@ import {
   Square,
   Eye,
   DotsThreeVertical,
+  Lightning,
 } from '@phosphor-icons/react'
 
 export const Route = createFileRoute('/projects/$projectId')({
@@ -307,6 +312,17 @@ function ProjectDetail() {
   const deleteJob = useMutation(api.jobs.deleteJob)
   const navigateDrive = useAction(api.actions.drive.navigate)
 
+  const createGeneration = useMutation((api as any).documentGenerations?.create)
+  const selectSections = useMutation(
+    (api as any).documentGenerations?.selectSections,
+  )
+  const startSynthesis = useAction(
+    (api as any).actions?.synthesis?.startSynthesis,
+  )
+  const startGeneration = useAction(
+    (api as any).actions?.generation?.startGeneration,
+  )
+
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isArchiving, setIsArchiving] = useState(false)
@@ -329,6 +345,58 @@ function ProjectDetail() {
     utterances?: Utterance[]
     extractionData?: MeetingExtraction
   } | null>(null)
+
+  type SynthesisStep = 'select' | 'recommend' | 'generate' | 'view'
+  const [synthesisStep, setSynthesisStep] = useState<SynthesisStep>('select')
+  const [synthesisLoading, setSynthesisLoading] = useState(false)
+  const [sectionRecommendations, setSectionRecommendations] = useState<
+    Array<{
+      sectionId: string
+      sectionTitle: string
+      confidence: 'high' | 'medium' | 'low'
+      summary: string
+      sourceFileNames: string[]
+    }>
+  >([])
+
+  const [currentGenerationId, setCurrentGenerationId] =
+    useState<Id<'documentGenerations'> | null>(null)
+  const [viewingDocumentId, setViewingDocumentId] =
+    useState<Id<'documents'> | null>(null)
+
+  const currentGeneration = useQuery(
+    (api as any).documentGenerations?.get,
+    currentGenerationId ? { generationId: currentGenerationId } : 'skip',
+  )
+
+  const currentDocument = useQuery(
+    (api as any).documents?.getWithSections,
+    currentGeneration?.documentId
+      ? { documentId: currentGeneration.documentId }
+      : 'skip',
+  )
+
+  useEffect(() => {
+    if (
+      currentGeneration?.status === 'recommending' &&
+      currentGeneration.recommendations
+    ) {
+      setSectionRecommendations(currentGeneration.recommendations)
+      setSynthesisLoading(false)
+      setSynthesisStep('recommend')
+    }
+  }, [currentGeneration?.status, currentGeneration?.recommendations])
+
+  useEffect(() => {
+    if (currentDocument?.sections) {
+      const allComplete = currentDocument.sections.every(
+        (s: any) => s.status === 'complete' || s.status === 'skipped',
+      )
+      if (allComplete && currentDocument.markdownContent) {
+        setSynthesisStep('view')
+      }
+    }
+  }, [currentDocument?.sections, currentDocument?.markdownContent])
 
   const isLoading = !isUserReady || project === undefined
   const error = isUserReady && project === null ? 'Project not found' : null
@@ -1442,6 +1510,90 @@ function ProjectDetail() {
         </section>
 
         <section>
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Lightning className="h-5 w-5 text-primary" weight="duotone" />
+            Document Synthesis
+          </h2>
+
+          {synthesisStep === 'select' && (
+            <SourceSelector
+              extractions={extractions}
+              onStartSynthesis={async (sources) => {
+                setSynthesisLoading(true)
+                try {
+                  if (createGeneration && startSynthesis) {
+                    const generationId = await createGeneration({
+                      projectId: convexProjectId,
+                      selectedSources: sources,
+                    })
+                    setCurrentGenerationId(generationId)
+                    await startSynthesis({ generationId })
+                  }
+                } catch (err) {
+                  console.error('Failed to start synthesis:', err)
+                  setSynthesisLoading(false)
+                }
+              }}
+              isStarting={synthesisLoading}
+            />
+          )}
+
+          {synthesisStep === 'recommend' && (
+            <SectionRecommendations
+              recommendations={sectionRecommendations}
+              onStartGeneration={async (selectedSectionIds) => {
+                setSynthesisLoading(true)
+                try {
+                  if (
+                    currentGenerationId &&
+                    selectSections &&
+                    startGeneration
+                  ) {
+                    await selectSections({
+                      generationId: currentGenerationId,
+                      selectedSectionIds,
+                    })
+                    await startGeneration({ generationId: currentGenerationId })
+                    setSynthesisStep('generate')
+                  }
+                } catch (err) {
+                  console.error('Failed to start generation:', err)
+                } finally {
+                  setSynthesisLoading(false)
+                }
+              }}
+              onBack={() => {
+                setSynthesisStep('select')
+                setSectionRecommendations([])
+                setCurrentGenerationId(null)
+              }}
+              isGenerating={synthesisLoading}
+            />
+          )}
+
+          {synthesisStep === 'generate' && currentDocument?.sections && (
+            <GenerationProgress
+              sections={currentDocument.sections.map((s: any) => ({
+                _id: s._id,
+                sectionId: s.sectionId,
+                sectionTitle: s.sectionTitle,
+                status: s.status,
+                reviewCount: s.generationHistory?.length || 0,
+                finalDraftNumber: s.finalDraftNumber,
+                generationHistory: s.generationHistory,
+              }))}
+              onViewDocument={() => {
+                if (currentDocument?._id) {
+                  setViewingDocumentId(currentDocument._id)
+                  setSynthesisStep('view')
+                }
+              }}
+              documentId={currentDocument?._id}
+            />
+          )}
+        </section>
+
+        <section>
           <h2 className="text-xl font-semibold mb-4">Documents</h2>
           {(documents ?? []).length === 0 ? (
             <Card>
@@ -1572,6 +1724,21 @@ function ProjectDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {viewingDocumentId && currentDocument && (
+        <DocumentViewer
+          title={currentDocument.title || 'Solution Design Document'}
+          markdownContent={
+            currentDocument.markdownContent ||
+            '# Document\n\nDocument is still being generated...'
+          }
+          onClose={() => setViewingDocumentId(null)}
+          onBack={() => {
+            setViewingDocumentId(null)
+            setSynthesisStep('generate')
+          }}
+        />
       )}
     </div>
   )

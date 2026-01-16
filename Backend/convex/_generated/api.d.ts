@@ -8,16 +8,23 @@
  * @module
  */
 
+import type * as actions_assembly from "../actions/assembly.js";
 import type * as actions_drive from "../actions/drive.js";
+import type * as actions_export from "../actions/export.js";
 import type * as actions_extraction from "../actions/extraction.js";
 import type * as actions_gcs from "../actions/gcs.js";
+import type * as actions_generation from "../actions/generation.js";
+import type * as actions_synthesis from "../actions/synthesis.js";
 import type * as actions_transcription from "../actions/transcription.js";
 import type * as auth from "../auth.js";
+import type * as documentGenerations from "../documentGenerations.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
 import type * as jobs from "../jobs.js";
 import type * as keyIdeas from "../keyIdeas.js";
+import type * as lib_logger from "../lib/logger.js";
 import type * as lib_prompts from "../lib/prompts.js";
+import type * as lib_sectionSchema from "../lib/sectionSchema.js";
 import type * as projects from "../projects.js";
 import type * as transcripts from "../transcripts.js";
 import type * as users from "../users.js";
@@ -29,16 +36,23 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "actions/assembly": typeof actions_assembly;
   "actions/drive": typeof actions_drive;
+  "actions/export": typeof actions_export;
   "actions/extraction": typeof actions_extraction;
   "actions/gcs": typeof actions_gcs;
+  "actions/generation": typeof actions_generation;
+  "actions/synthesis": typeof actions_synthesis;
   "actions/transcription": typeof actions_transcription;
   auth: typeof auth;
+  documentGenerations: typeof documentGenerations;
   documents: typeof documents;
   http: typeof http;
   jobs: typeof jobs;
   keyIdeas: typeof keyIdeas;
+  "lib/logger": typeof lib_logger;
   "lib/prompts": typeof lib_prompts;
+  "lib/sectionSchema": typeof lib_sectionSchema;
   projects: typeof projects;
   transcripts: typeof transcripts;
   users: typeof users;

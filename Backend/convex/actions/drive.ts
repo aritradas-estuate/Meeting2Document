@@ -430,6 +430,10 @@ export const revokeFilePublicAccess = internalAction({
   },
 });
 
+// Timeout constants for large file operations
+const DRIVE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for Drive API response
+const STREAM_IDLE_TIMEOUT_MS = 60 * 1000; // 1 minute without data = timeout
+
 export const downloadAndUploadToGcs = internalAction({
   args: {
     fileId: v.string(),
@@ -509,12 +513,32 @@ export const downloadAndUploadToGcs = internalAction({
       console.log(`\nStream attempt ${attempt}/${MAX_RETRIES}...`);
 
       try {
-        const driveResponse = await drive.files.get(
-          { fileId: args.fileId, alt: "media", supportsAllDrives: true },
-          { responseType: "stream" },
+        console.log(
+          `[${new Date().toISOString()}] Requesting stream from Google Drive...`,
         );
+        const downloadStart = Date.now();
 
-        console.log(`Got stream from Drive API, piping to GCS...`);
+        const driveResponse = await Promise.race([
+          drive.files.get(
+            { fileId: args.fileId, alt: "media", supportsAllDrives: true },
+            { responseType: "stream" },
+          ),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `Drive API timeout after ${DRIVE_DOWNLOAD_TIMEOUT_MS / 1000}s - file may be too large or network is slow`,
+                  ),
+                ),
+              DRIVE_DOWNLOAD_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+
+        console.log(
+          `[${new Date().toISOString()}] Got stream from Drive API in ${Date.now() - downloadStart}ms, piping to GCS...`,
+        );
 
         const gcsWriteStream = gcsFile.createWriteStream({
           resumable: true,
@@ -533,28 +557,54 @@ export const downloadAndUploadToGcs = internalAction({
           (resolve, reject) => {
             let transferred = 0;
             let lastLoggedMB = 0;
+            let lastDataTime = Date.now();
 
             const driveStream = driveResponse.data as NodeJS.ReadableStream;
 
+            const idleChecker = setInterval(() => {
+              const idleTime = Date.now() - lastDataTime;
+              if (idleTime > STREAM_IDLE_TIMEOUT_MS) {
+                clearInterval(idleChecker);
+                const errorMsg = `Stream idle timeout - no data received for ${STREAM_IDLE_TIMEOUT_MS / 1000}s (transferred ${formatBytes(transferred)} so far)`;
+                console.error(`[${new Date().toISOString()}] ${errorMsg}`);
+                reject(new Error(errorMsg));
+              }
+            }, 10000);
+
             driveStream
               .on("data", (chunk: Buffer) => {
+                lastDataTime = Date.now();
                 transferred += chunk.length;
                 const currentMB = Math.floor(transferred / (20 * 1024 * 1024));
                 if (currentMB > lastLoggedMB) {
                   lastLoggedMB = currentMB;
-                  console.log(`  Streamed ${formatBytes(transferred)}...`);
+                  console.log(
+                    `  [${new Date().toISOString()}] Streamed ${formatBytes(transferred)}...`,
+                  );
                 }
               })
               .on("error", (err: Error) => {
-                console.error(`Drive stream error:`, err.message);
+                clearInterval(idleChecker);
+                console.error(
+                  `[${new Date().toISOString()}] Drive stream error:`,
+                  err.message,
+                );
                 reject(new Error(`Drive stream error: ${err.message}`));
               })
               .pipe(gcsWriteStream)
               .on("error", (err: Error) => {
-                console.error(`GCS stream error:`, err.message);
+                clearInterval(idleChecker);
+                console.error(
+                  `[${new Date().toISOString()}] GCS stream error:`,
+                  err.message,
+                );
                 reject(new Error(`GCS stream error: ${err.message}`));
               })
               .on("finish", () => {
+                clearInterval(idleChecker);
+                console.log(
+                  `[${new Date().toISOString()}] Stream completed successfully`,
+                );
                 resolve(transferred);
               });
           },

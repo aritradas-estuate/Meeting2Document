@@ -61,6 +61,21 @@ const extractionStatusValidator = v.union(
   v.literal("failed"),
 );
 
+const generationStatusValidator = v.union(
+  v.literal("selecting"),
+  v.literal("analyzing"),
+  v.literal("recommending"),
+  v.literal("generating"),
+  v.literal("completed"),
+  v.literal("failed"),
+);
+
+const confidenceLevelValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -174,22 +189,57 @@ export default defineSchema({
 
   documentSections: defineTable({
     documentId: v.id("documents"),
+    generationId: v.optional(v.id("documentGenerations")),
     sectionId: v.string(),
     sectionTitle: v.string(),
     content: v.optional(v.string()),
     status: sectionStatusValidator,
+    sourceFileNames: v.optional(v.array(v.string())),
     generationHistory: v.array(
       v.object({
         draftNumber: v.number(),
         content: v.string(),
-        generatedAt: v.string(),
-        model: v.string(),
-        feedback: v.optional(v.string()),
+        generatedAt: v.number(),
+        writerModel: v.string(),
+        reviewerModel: v.optional(v.string()),
+        reviewerFeedback: v.optional(v.string()),
+        approved: v.boolean(),
       }),
     ),
     reviewCount: v.number(),
     finalDraftNumber: v.optional(v.number()),
   })
     .index("by_document", ["documentId"])
-    .index("by_document_section", ["documentId", "sectionId"]),
+    .index("by_document_section", ["documentId", "sectionId"])
+    .index("by_generation", ["generationId"]),
+
+  documentGenerations: defineTable({
+    projectId: v.id("projects"),
+    status: generationStatusValidator,
+    selectedSources: v.array(
+      v.object({
+        transcriptId: v.id("transcripts"),
+        keyIdeaId: v.id("keyIdeas"),
+        fileName: v.string(),
+      }),
+    ),
+    recommendations: v.optional(
+      v.array(
+        v.object({
+          sectionId: v.string(),
+          sectionTitle: v.string(),
+          confidence: confidenceLevelValidator,
+          summary: v.string(),
+          sourceFileNames: v.array(v.string()),
+        }),
+      ),
+    ),
+    selectedSectionIds: v.optional(v.array(v.string())),
+    documentId: v.optional(v.id("documents")),
+    errorMessage: v.optional(v.string()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_status", ["status"]),
 });

@@ -9,7 +9,7 @@ const LARGE_FILE_THRESHOLD_BYTES = 95 * 1024 * 1024;
 const LARGE_FILE_THRESHOLD_MB = LARGE_FILE_THRESHOLD_BYTES / 1024 / 1024;
 const CONVEX_NODE_MEMORY_LIMIT_MB = 512;
 
-const DEBUG_LARGE_FILE = false;
+const DEBUG_LARGE_FILE = process.env.DEBUG_LARGE_FILE === "true";
 
 function getMemoryInfo(): {
   heapMB: string;

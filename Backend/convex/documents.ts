@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import {
+  mutation,
+  query,
+  internalMutation,
+  internalQuery,
+} from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
@@ -30,7 +35,13 @@ async function verifyDocumentAccess(ctx: any, documentId: Id<"documents">) {
 export const list = query({
   args: {
     projectId: v.optional(v.id("projects")),
-    status: v.optional(v.union(v.literal("draft"), v.literal("generating"), v.literal("complete"))),
+    status: v.optional(
+      v.union(
+        v.literal("draft"),
+        v.literal("generating"),
+        v.literal("complete"),
+      ),
+    ),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -126,7 +137,13 @@ export const update = mutation({
     title: v.optional(v.string()),
     content: v.optional(v.any()),
     markdownContent: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("draft"), v.literal("generating"), v.literal("complete"))),
+    status: v.optional(
+      v.union(
+        v.literal("draft"),
+        v.literal("generating"),
+        v.literal("complete"),
+      ),
+    ),
     driveFileId: v.optional(v.string()),
     driveFileUrl: v.optional(v.string()),
   },
@@ -135,10 +152,13 @@ export const update = mutation({
 
     const { documentId, ...updates } = args;
     const filteredUpdates: any = Object.fromEntries(
-      Object.entries(updates).filter(([_, value]) => value !== undefined)
+      Object.entries(updates).filter(([_, value]) => value !== undefined),
     );
 
-    if (filteredUpdates.content !== undefined || filteredUpdates.markdownContent !== undefined) {
+    if (
+      filteredUpdates.content !== undefined ||
+      filteredUpdates.markdownContent !== undefined
+    ) {
       filteredUpdates.version = document.version + 1;
     }
 
@@ -177,7 +197,7 @@ export const getSection = query({
     const section = await ctx.db
       .query("documentSections")
       .withIndex("by_document_section", (q) =>
-        q.eq("documentId", args.documentId).eq("sectionId", args.sectionId)
+        q.eq("documentId", args.documentId).eq("sectionId", args.sectionId),
       )
       .first();
 
@@ -197,8 +217,8 @@ export const updateSection = mutation({
         v.literal("generating"),
         v.literal("reviewing"),
         v.literal("complete"),
-        v.literal("skipped")
-      )
+        v.literal("skipped"),
+      ),
     ),
   },
   handler: async (ctx, args) => {
@@ -207,7 +227,7 @@ export const updateSection = mutation({
     const section = await ctx.db
       .query("documentSections")
       .withIndex("by_document_section", (q) =>
-        q.eq("documentId", args.documentId).eq("sectionId", args.sectionId)
+        q.eq("documentId", args.documentId).eq("sectionId", args.sectionId),
       )
       .first();
 
@@ -234,8 +254,8 @@ export const createSection = mutation({
         v.literal("generating"),
         v.literal("reviewing"),
         v.literal("complete"),
-        v.literal("skipped")
-      )
+        v.literal("skipped"),
+      ),
     ),
   },
   handler: async (ctx, args) => {
@@ -268,5 +288,139 @@ export const exportMarkdown = query({
       format: "markdown",
       content: document.markdownContent,
     };
+  },
+});
+
+export const createInternal = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    title: v.string(),
+    schemaType: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("documents", {
+      projectId: args.projectId,
+      title: args.title,
+      schemaType: args.schemaType,
+      version: 1,
+      status: "generating",
+    });
+  },
+});
+
+export const createSectionInternal = internalMutation({
+  args: {
+    documentId: v.id("documents"),
+    sectionId: v.string(),
+    sectionTitle: v.string(),
+    sourceFileNames: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("documentSections", {
+      documentId: args.documentId,
+      sectionId: args.sectionId,
+      sectionTitle: args.sectionTitle,
+      status: "pending",
+      sourceFileNames: args.sourceFileNames,
+      generationHistory: [],
+      reviewCount: 0,
+    });
+  },
+});
+
+export const updateSectionStatusInternal = internalMutation({
+  args: {
+    documentSectionId: v.id("documentSections"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("generating"),
+      v.literal("reviewing"),
+      v.literal("complete"),
+      v.literal("skipped"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.documentSectionId, { status: args.status });
+  },
+});
+
+const generationHistoryEntryValidator = v.object({
+  draftNumber: v.number(),
+  content: v.string(),
+  generatedAt: v.number(),
+  writerModel: v.string(),
+  reviewerModel: v.optional(v.string()),
+  reviewerFeedback: v.optional(v.string()),
+  approved: v.boolean(),
+});
+
+export const saveSectionContentInternal = internalMutation({
+  args: {
+    documentSectionId: v.id("documentSections"),
+    content: v.string(),
+    generationHistory: v.array(generationHistoryEntryValidator),
+    finalDraftNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.documentSectionId, {
+      content: args.content,
+      status: "complete",
+      generationHistory: args.generationHistory,
+      finalDraftNumber: args.finalDraftNumber,
+      reviewCount: args.generationHistory.length,
+    });
+  },
+});
+
+export const getWithSectionsInternal = internalQuery({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    const document = await ctx.db.get(args.documentId);
+    if (!document) return null;
+
+    const sections = await ctx.db
+      .query("documentSections")
+      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .collect();
+
+    return { ...document, sections };
+  },
+});
+
+export const updateMarkdownContentInternal = internalMutation({
+  args: {
+    documentId: v.id("documents"),
+    markdownContent: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc) throw new Error("Document not found");
+
+    await ctx.db.patch(args.documentId, {
+      markdownContent: args.markdownContent,
+      status: "complete",
+      version: doc.version + 1,
+    });
+  },
+});
+
+export const getByIdInternal = internalQuery({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.documentId);
+  },
+});
+
+export const updateDriveFileInternal = internalMutation({
+  args: {
+    documentId: v.id("documents"),
+    driveFileId: v.string(),
+    driveFileUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.documentId, {
+      driveFileId: args.driveFileId,
+      driveFileUrl: args.driveFileUrl,
+    });
   },
 });
