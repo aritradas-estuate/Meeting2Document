@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import {
+  mutation,
+  query,
+  internalMutation,
+  internalQuery,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
@@ -46,6 +51,8 @@ export const list = query({
         .order("desc")
         .collect();
 
+      jobs = jobs.filter((j) => !j.deletedAt);
+
       if (!args.includeArchived) {
         jobs = jobs.filter((j) => !j.archivedAt);
       }
@@ -66,6 +73,7 @@ export const list = query({
 
     let jobs = await ctx.db.query("jobs").order("desc").collect();
     jobs = jobs.filter((j) => projectIds.has(j.projectId));
+    jobs = jobs.filter((j) => !j.deletedAt);
 
     if (!args.includeArchived) {
       jobs = jobs.filter((j) => !j.archivedAt);
@@ -211,7 +219,9 @@ export const retry = mutation({
       completedAt: undefined,
     });
 
-    await ctx.scheduler.runAfter(0, internal.jobs.startProcessing, { jobId: args.jobId });
+    await ctx.scheduler.runAfter(0, internal.jobs.startProcessing, {
+      jobId: args.jobId,
+    });
 
     return args.jobId;
   },
@@ -249,6 +259,22 @@ export const unarchive = mutation({
   },
 });
 
+export const deleteJob = mutation({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Job not found");
+
+    await verifyProjectAccess(ctx, job.projectId);
+
+    await ctx.db.patch(args.jobId, {
+      deletedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
 export const listArchived = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -260,7 +286,7 @@ export const listArchived = query({
       .order("desc")
       .collect();
 
-    return jobs.filter((job) => job.archivedAt);
+    return jobs.filter((job) => job.archivedAt && !job.deletedAt);
   },
 });
 
@@ -303,9 +329,13 @@ export const startProcessing = internalMutation({
       },
     });
 
-    await ctx.scheduler.runAfter(0, internal.actions.transcription.startTranscription, {
-      jobId: args.jobId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.actions.transcription.startTranscription,
+      {
+        jobId: args.jobId,
+      },
+    );
   },
 });
 
@@ -320,9 +350,12 @@ export const updateStatus = internalMutation({
   handler: async (ctx, args) => {
     const updates: any = { status: args.status };
 
-    if (args.currentStage !== undefined) updates.currentStage = args.currentStage;
-    if (args.stageProgress !== undefined) updates.stageProgress = args.stageProgress;
-    if (args.errorMessage !== undefined) updates.errorMessage = args.errorMessage;
+    if (args.currentStage !== undefined)
+      updates.currentStage = args.currentStage;
+    if (args.stageProgress !== undefined)
+      updates.stageProgress = args.stageProgress;
+    if (args.errorMessage !== undefined)
+      updates.errorMessage = args.errorMessage;
 
     if (args.status === "completed" || args.status === "failed") {
       updates.completedAt = Date.now();
@@ -350,7 +383,7 @@ export const checkCompletion = internalMutation({
     if (keyIdeas.length === 0) return;
 
     const allDone = keyIdeas.every(
-      (k) => k.status === "completed" || k.status === "failed"
+      (k) => k.status === "completed" || k.status === "failed",
     );
 
     if (!allDone) return;
@@ -361,7 +394,9 @@ export const checkCompletion = internalMutation({
       .collect();
 
     const failedKeyIdeas = keyIdeas.filter((k) => k.status === "failed").length;
-    const failedTranscripts = transcripts.filter((t) => t.status === "failed").length;
+    const failedTranscripts = transcripts.filter(
+      (t) => t.status === "failed",
+    ).length;
     const totalItems = keyIdeas.length;
 
     const allFailed = failedKeyIdeas === totalItems;

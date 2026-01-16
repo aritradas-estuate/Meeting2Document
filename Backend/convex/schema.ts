@@ -25,18 +25,18 @@ const jobStatusValidator = v.union(
   v.literal("assembling"),
   v.literal("uploading"),
   v.literal("completed"),
-  v.literal("failed")
+  v.literal("failed"),
 );
 
 const projectStatusValidator = v.union(
   v.literal("active"),
-  v.literal("archived")
+  v.literal("archived"),
 );
 
 const documentStatusValidator = v.union(
   v.literal("draft"),
   v.literal("generating"),
-  v.literal("complete")
+  v.literal("complete"),
 );
 
 const sectionStatusValidator = v.union(
@@ -44,21 +44,21 @@ const sectionStatusValidator = v.union(
   v.literal("generating"),
   v.literal("reviewing"),
   v.literal("complete"),
-  v.literal("skipped")
+  v.literal("skipped"),
 );
 
 const transcriptStatusValidator = v.union(
   v.literal("pending"),
   v.literal("transcribing"),
   v.literal("completed"),
-  v.literal("failed")
+  v.literal("failed"),
 );
 
 const extractionStatusValidator = v.union(
   v.literal("pending"),
   v.literal("extracting"),
   v.literal("completed"),
-  v.literal("failed")
+  v.literal("failed"),
 );
 
 export default defineSchema({
@@ -72,8 +72,7 @@ export default defineSchema({
     googleAccessToken: v.optional(v.string()),
     googleRefreshToken: v.optional(v.string()),
     googleTokenExpiresAt: v.optional(v.number()),
-  })
-    .index("email", ["email"]),
+  }).index("email", ["email"]),
 
   projects: defineTable({
     userId: v.id("users"),
@@ -93,17 +92,20 @@ export default defineSchema({
     videoFiles: v.array(driveFileValidator),
     supportingFiles: v.optional(v.array(driveFileValidator)),
     currentStage: v.optional(v.string()),
-    stageProgress: v.optional(v.object({
-      stage: v.string(),
-      progress: v.number(),
-      message: v.optional(v.string()),
-      filesCompleted: v.optional(v.number()),
-      totalFiles: v.optional(v.number()),
-    })),
+    stageProgress: v.optional(
+      v.object({
+        stage: v.string(),
+        progress: v.number(),
+        message: v.optional(v.string()),
+        filesCompleted: v.optional(v.number()),
+        totalFiles: v.optional(v.number()),
+      }),
+    ),
     errorMessage: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     archivedAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
   })
     .index("by_project", ["projectId"])
     .index("by_status", ["status"])
@@ -120,12 +122,16 @@ export default defineSchema({
     publicUrl: v.optional(v.string()),
     gcsFileName: v.optional(v.string()),
     text: v.optional(v.string()),
-    utterances: v.optional(v.array(v.object({
-      speaker: v.string(),
-      text: v.string(),
-      start: v.number(),
-      end: v.number(),
-    }))),
+    utterances: v.optional(
+      v.array(
+        v.object({
+          speaker: v.string(),
+          text: v.string(),
+          start: v.number(),
+          end: v.number(),
+        }),
+      ),
+    ),
     error: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
@@ -172,13 +178,15 @@ export default defineSchema({
     sectionTitle: v.string(),
     content: v.optional(v.string()),
     status: sectionStatusValidator,
-    generationHistory: v.array(v.object({
-      draftNumber: v.number(),
-      content: v.string(),
-      generatedAt: v.string(),
-      model: v.string(),
-      feedback: v.optional(v.string()),
-    })),
+    generationHistory: v.array(
+      v.object({
+        draftNumber: v.number(),
+        content: v.string(),
+        generatedAt: v.string(),
+        model: v.string(),
+        feedback: v.optional(v.string()),
+      }),
+    ),
     reviewCount: v.number(),
     finalDraftNumber: v.optional(v.number()),
   })
