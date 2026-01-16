@@ -12,6 +12,7 @@
     "20": "^3.1.9",
     "@auth/core": "^0.37.4",
     "@convex-dev/auth": "^0.0.80",
+    "@google-cloud/storage": "^7.7.0",
     "assemblyai": "^4.8.0",
     "convex": "^1.21.0",
     "googleapis": "^144.0.0",

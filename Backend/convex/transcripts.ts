@@ -181,3 +181,13 @@ export const listByJobInternal = internalQuery({
       .collect();
   },
 });
+
+export const updateGcsFileNameInternal = internalMutation({
+  args: {
+    transcriptId: v.id("transcripts"),
+    gcsFileName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.transcriptId, { gcsFileName: args.gcsFileName });
+  },
+});

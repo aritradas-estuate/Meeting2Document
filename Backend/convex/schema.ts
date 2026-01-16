@@ -103,6 +103,7 @@ export default defineSchema({
     errorMessage: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
   })
     .index("by_project", ["projectId"])
     .index("by_status", ["status"])
@@ -117,6 +118,7 @@ export default defineSchema({
     status: transcriptStatusValidator,
     assemblyAiTranscriptId: v.optional(v.string()),
     publicUrl: v.optional(v.string()),
+    gcsFileName: v.optional(v.string()),
     text: v.optional(v.string()),
     utterances: v.optional(v.array(v.object({
       speaker: v.string(),

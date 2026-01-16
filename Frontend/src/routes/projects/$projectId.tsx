@@ -9,6 +9,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuthStore } from "@/stores/auth";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -41,6 +48,7 @@ import {
   CheckSquare,
   Square,
   Eye,
+  DotsThreeVertical,
 } from "@phosphor-icons/react";
 
 export const Route = createFileRoute("/projects/$projectId")({
@@ -232,6 +240,7 @@ function ProjectDetail() {
   const documents = useQuery(api.documents.list, isUserReady ? { projectId: convexProjectId } : "skip");
   const transcripts = useQuery(api.transcripts.list, isUserReady ? { projectId: convexProjectId } : "skip");
   const keyIdeasList = useQuery(api.keyIdeas.list, isUserReady ? { projectId: convexProjectId } : "skip");
+  const archivedJobs = useQuery(api.jobs.listArchived, isUserReady ? { projectId: convexProjectId } : "skip");
   
   const archiveProject = useMutation(api.projects.archive);
   const restoreProject = useMutation(api.projects.restore);
@@ -239,6 +248,8 @@ function ProjectDetail() {
   const updateProject = useMutation(api.projects.update);
   const createJob = useMutation(api.jobs.create);
   const retryJob = useMutation(api.jobs.retry);
+  const archiveJob = useMutation(api.jobs.archive);
+  const unarchiveJob = useMutation(api.jobs.unarchive);
   const navigateDrive = useAction(api.actions.drive.navigate);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -252,6 +263,7 @@ function ProjectDetail() {
   const [selectedFiles, setSelectedFiles] = useState<DriveItem[]>([]);
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [isStartingProcessing, setIsStartingProcessing] = useState(false);
+  const [showArchivedJobs, setShowArchivedJobs] = useState(false);
 
   const [viewingContent, setViewingContent] = useState<{
     type: 'transcript' | 'extraction';
@@ -885,10 +897,48 @@ function ProjectDetail() {
                 <Card key={job._id}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">
-                        Job
-                      </CardTitle>
-                      {getJobStatusBadge(job.status)}
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base">Job</CardTitle>
+                        {getJobStatusBadge(job.status)}
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <DotsThreeVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {job.status === "failed" && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  try {
+                                    await retryJob({ jobId: job._id });
+                                  } catch (err) {
+                                    console.error("Failed to retry job:", err);
+                                  }
+                                }}
+                              >
+                                <ArrowClockwise className="h-4 w-4 mr-2" />
+                                Retry
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              try {
+                                await archiveJob({ jobId: job._id });
+                              } catch (err) {
+                                console.error("Failed to archive job:", err);
+                              }
+                            }}
+                          >
+                            <Archive className="h-4 w-4 mr-2" />
+                            Archive
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     <CardDescription>
                       {job.videoFiles.length} video file
@@ -950,28 +1000,97 @@ function ProjectDetail() {
                         ))}
                       </div>
                     </div>
-
-                    {job.status === "failed" && (
-                      <div className="mt-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            try {
-                              await retryJob({ jobId: job._id });
-                            } catch (err) {
-                              console.error("Failed to retry job:", err);
-                            }
-                          }}
-                        >
-                          <ArrowClockwise className="h-4 w-4 mr-2" />
-                          Retry
-                        </Button>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+
+          {(archivedJobs ?? []).length > 0 && (
+            <div className="mt-6">
+              <button
+                onClick={() => setShowArchivedJobs(!showArchivedJobs)}
+                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showArchivedJobs ? (
+                  <CaretDown className="h-4 w-4" />
+                ) : (
+                  <CaretRight className="h-4 w-4" />
+                )}
+                <Archive className="h-4 w-4" />
+                <span>Archived Jobs ({(archivedJobs ?? []).length})</span>
+              </button>
+
+              {showArchivedJobs && (
+                <div className="mt-4 space-y-4">
+                  {(archivedJobs ?? []).map((job) => (
+                    <Card key={job._id} className="opacity-70">
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CardTitle className="text-base">Job</CardTitle>
+                            <Badge variant="outline">
+                              <Archive className="h-3 w-3 mr-1" />
+                              Archived
+                            </Badge>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <DotsThreeVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  try {
+                                    await unarchiveJob({ jobId: job._id });
+                                  } catch (err) {
+                                    console.error("Failed to unarchive job:", err);
+                                  }
+                                }}
+                              >
+                                <ArrowCounterClockwise className="h-4 w-4 mr-2" />
+                                Unarchive
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <CardDescription>
+                          {job.videoFiles.length} video file
+                          {job.videoFiles.length !== 1 ? "s" : ""}
+                          {job.supportingFiles && job.supportingFiles.length > 0
+                            ? ` + ${job.supportingFiles.length} supporting files`
+                            : ""}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          {job.completedAt && (
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                Completed:{" "}
+                                {new Date(job.completedAt).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-4">
+                          <p className="text-xs text-muted-foreground mb-2">Files:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {job.videoFiles.map((file) => (
+                              <Badge key={file.id} variant="outline">
+                                {file.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </section>

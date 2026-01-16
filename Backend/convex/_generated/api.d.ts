@@ -10,6 +10,7 @@
 
 import type * as actions_drive from "../actions/drive.js";
 import type * as actions_extraction from "../actions/extraction.js";
+import type * as actions_gcs from "../actions/gcs.js";
 import type * as actions_transcription from "../actions/transcription.js";
 import type * as auth from "../auth.js";
 import type * as documents from "../documents.js";
@@ -30,6 +31,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/drive": typeof actions_drive;
   "actions/extraction": typeof actions_extraction;
+  "actions/gcs": typeof actions_gcs;
   "actions/transcription": typeof actions_transcription;
   auth: typeof auth;
   documents: typeof documents;

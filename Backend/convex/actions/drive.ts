@@ -5,6 +5,48 @@ import { api, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { google, drive_v3 } from "googleapis";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { Storage } from "@google-cloud/storage";
+
+function parseGcsPrivateKey(rawKey: string): string {
+  let key = rawKey;
+  if (key.startsWith('"') && key.endsWith('"')) {
+    key = key.slice(1, -1);
+  }
+  if (key.includes("\\n")) {
+    key = key.replace(/\\n/g, "\n");
+  }
+  return key;
+}
+
+function getGcsStorage(): Storage {
+  const projectId = process.env.GCS_PROJECT_ID;
+  const clientEmail = process.env.GCS_CLIENT_EMAIL;
+  const rawPrivateKey = process.env.GCS_PRIVATE_KEY;
+
+  if (!projectId || !clientEmail || !rawPrivateKey) {
+    const missing = [];
+    if (!projectId) missing.push("GCS_PROJECT_ID");
+    if (!clientEmail) missing.push("GCS_CLIENT_EMAIL");
+    if (!rawPrivateKey) missing.push("GCS_PRIVATE_KEY");
+    throw new Error(`GCS credentials missing: ${missing.join(", ")}`);
+  }
+
+  return new Storage({
+    projectId,
+    credentials: {
+      client_email: clientEmail,
+      private_key: parseGcsPrivateKey(rawPrivateKey),
+    },
+  });
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
 
 interface DriveItem {
   id: string;
@@ -32,7 +74,9 @@ interface Breadcrumb {
   name: string;
 }
 
-async function getAuthenticatedDriveClient(ctx: ActionCtx): Promise<{ drive: drive_v3.Drive; user: any }> {
+async function getAuthenticatedDriveClient(
+  ctx: ActionCtx,
+): Promise<{ drive: drive_v3.Drive; user: any }> {
   const userId = await getAuthUserId(ctx);
   if (!userId) throw new Error("Unauthorized");
 
@@ -40,12 +84,14 @@ async function getAuthenticatedDriveClient(ctx: ActionCtx): Promise<{ drive: dri
 
   if (!user) throw new Error("User not found");
   if (!user.googleAccessToken) {
-    throw new Error("No Google Drive access token available. Please re-authenticate.");
+    throw new Error(
+      "No Google Drive access token available. Please re-authenticate.",
+    );
   }
 
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET
+    process.env.GOOGLE_CLIENT_SECRET,
   );
 
   oauth2Client.setCredentials({
@@ -64,7 +110,9 @@ async function getAuthenticatedDriveClient(ctx: ActionCtx): Promise<{ drive: dri
         expiresAt: credentials.expiry_date ?? undefined,
       });
     } catch (error) {
-      throw new Error("Failed to refresh Google token. Please re-authenticate.");
+      throw new Error(
+        "Failed to refresh Google token. Please re-authenticate.",
+      );
     }
   }
 
@@ -79,7 +127,10 @@ export const listSharedDrives = action({
     pageToken: v.optional(v.string()),
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<{ drives: SharedDrive[]; nextPageToken: string | null }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ drives: SharedDrive[]; nextPageToken: string | null }> => {
     const { drive } = await getAuthenticatedDriveClient(ctx);
 
     const response = await drive.drives.list({
@@ -108,7 +159,10 @@ export const listFiles = action({
     pageToken: v.optional(v.string()),
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<{ items: DriveItem[]; nextPageToken: string | null }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ items: DriveItem[]; nextPageToken: string | null }> => {
     const { drive } = await getAuthenticatedDriveClient(ctx);
 
     const qParts = ["trashed = false"];
@@ -156,19 +210,21 @@ export const listFiles = action({
 
     const response = await drive.files.list(requestParams);
 
-    const items: DriveItem[] = (response.data.files ?? []).map((f: drive_v3.Schema$File) => ({
-      id: f.id!,
-      name: f.name!,
-      mimeType: f.mimeType ?? "",
-      size: f.size ? parseInt(f.size) : null,
-      createdTime: f.createdTime ?? null,
-      modifiedTime: f.modifiedTime ?? null,
-      webViewLink: f.webViewLink ?? null,
-      iconLink: f.iconLink ?? null,
-      thumbnailLink: f.thumbnailLink ?? null,
-      parents: f.parents ?? null,
-      isFolder: f.mimeType === "application/vnd.google-apps.folder",
-    }));
+    const items: DriveItem[] = (response.data.files ?? []).map(
+      (f: drive_v3.Schema$File) => ({
+        id: f.id!,
+        name: f.name!,
+        mimeType: f.mimeType ?? "",
+        size: f.size ? parseInt(f.size) : null,
+        createdTime: f.createdTime ?? null,
+        modifiedTime: f.modifiedTime ?? null,
+        webViewLink: f.webViewLink ?? null,
+        iconLink: f.iconLink ?? null,
+        thumbnailLink: f.thumbnailLink ?? null,
+        parents: f.parents ?? null,
+        isFolder: f.mimeType === "application/vnd.google-apps.folder",
+      }),
+    );
 
     return {
       items,
@@ -184,10 +240,18 @@ export const navigate = action({
     pageToken: v.optional(v.string()),
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<{
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
     items: DriveItem[];
     breadcrumbs: Breadcrumb[];
-    currentFolder: { id: string; name: string; mimeType: string; isFolder: boolean };
+    currentFolder: {
+      id: string;
+      name: string;
+      mimeType: string;
+      isFolder: boolean;
+    };
     nextPageToken: string | null;
   }> => {
     const { drive } = await getAuthenticatedDriveClient(ctx);
@@ -232,12 +296,12 @@ export const navigate = action({
       name: currentFolder.name,
     });
 
-    const filesResponse = await ctx.runAction(api.actions.drive.listFiles, {
+    const filesResponse = (await ctx.runAction(api.actions.drive.listFiles, {
       folderId: args.folderId,
       driveId: args.driveId,
       pageToken: args.pageToken,
       pageSize: args.pageSize,
-    }) as { items: DriveItem[]; nextPageToken: string | null };
+    })) as { items: DriveItem[]; nextPageToken: string | null };
 
     return {
       items: filesResponse.items,
@@ -291,14 +355,16 @@ export const makeFilePublic = internalAction({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.runQuery(internal.users.getById, { userId: args.userId });
+    const user = await ctx.runQuery(internal.users.getById, {
+      userId: args.userId,
+    });
     if (!user || !user.googleAccessToken) {
       throw new Error("User not found or missing Google credentials");
     }
 
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
+      process.env.GOOGLE_CLIENT_SECRET,
     );
 
     oauth2Client.setCredentials({
@@ -328,14 +394,16 @@ export const revokeFilePublicAccess = internalAction({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.runQuery(internal.users.getById, { userId: args.userId });
+    const user = await ctx.runQuery(internal.users.getById, {
+      userId: args.userId,
+    });
     if (!user || !user.googleAccessToken) {
       throw new Error("User not found or missing Google credentials");
     }
 
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
+      process.env.GOOGLE_CLIENT_SECRET,
     );
 
     oauth2Client.setCredentials({
@@ -359,5 +427,176 @@ export const revokeFilePublicAccess = internalAction({
         });
       }
     }
+  },
+});
+
+export const downloadAndUploadToGcs = internalAction({
+  args: {
+    fileId: v.string(),
+    fileName: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<string> => {
+    const startTime = Date.now();
+    const MAX_RETRIES = 3;
+
+    console.log(`\n${"=".repeat(80)}`);
+    console.log(`STREAMING UPLOAD: ${args.fileName}`);
+    console.log(`File ID: ${args.fileId}`);
+    console.log(`Method: Direct streaming (memory-efficient)`);
+    console.log(`${"=".repeat(80)}`);
+
+    const user = await ctx.runQuery(internal.users.getById, {
+      userId: args.userId,
+    });
+    if (!user || !user.googleAccessToken) {
+      throw new Error("User not found or missing Google credentials");
+    }
+
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+    );
+
+    oauth2Client.setCredentials({
+      access_token: user.googleAccessToken,
+      refresh_token: user.googleRefreshToken,
+    });
+
+    if (user.googleTokenExpiresAt && user.googleTokenExpiresAt < Date.now()) {
+      try {
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        oauth2Client.setCredentials(credentials);
+        await ctx.runMutation(internal.users.updateGoogleTokens, {
+          userId: user._id,
+          accessToken: credentials.access_token!,
+          expiresAt: credentials.expiry_date ?? undefined,
+        });
+      } catch (error) {
+        throw new Error(
+          "Failed to refresh Google token. Please re-authenticate.",
+        );
+      }
+    }
+
+    const drive = google.drive({ version: "v3", auth: oauth2Client });
+
+    let storage: Storage;
+    try {
+      storage = getGcsStorage();
+    } catch (error: any) {
+      console.error(`GCS credentials error:`, error.message);
+      throw error;
+    }
+
+    const bucketName = process.env.GCS_BUCKET_NAME;
+    if (!bucketName) {
+      throw new Error("GCS_BUCKET_NAME not configured");
+    }
+
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const sanitizedFileName = args.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const gcsFileName = `temp/${timestamp}_${randomSuffix}_${sanitizedFileName}`;
+
+    const bucket = storage.bucket(bucketName);
+    const gcsFile = bucket.file(gcsFileName);
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const attemptStart = Date.now();
+      console.log(`\nStream attempt ${attempt}/${MAX_RETRIES}...`);
+
+      try {
+        const driveResponse = await drive.files.get(
+          { fileId: args.fileId, alt: "media", supportsAllDrives: true },
+          { responseType: "stream" },
+        );
+
+        console.log(`Got stream from Drive API, piping to GCS...`);
+
+        const gcsWriteStream = gcsFile.createWriteStream({
+          resumable: true,
+          metadata: {
+            contentType:
+              driveResponse.headers?.["content-type"] ||
+              "application/octet-stream",
+            metadata: {
+              originalFileName: args.fileName,
+              uploadedAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        const bytesTransferred = await new Promise<number>(
+          (resolve, reject) => {
+            let transferred = 0;
+            let lastLoggedMB = 0;
+
+            const driveStream = driveResponse.data as NodeJS.ReadableStream;
+
+            driveStream
+              .on("data", (chunk: Buffer) => {
+                transferred += chunk.length;
+                const currentMB = Math.floor(transferred / (20 * 1024 * 1024));
+                if (currentMB > lastLoggedMB) {
+                  lastLoggedMB = currentMB;
+                  console.log(`  Streamed ${formatBytes(transferred)}...`);
+                }
+              })
+              .on("error", (err: Error) => {
+                console.error(`Drive stream error:`, err.message);
+                reject(new Error(`Drive stream error: ${err.message}`));
+              })
+              .pipe(gcsWriteStream)
+              .on("error", (err: Error) => {
+                console.error(`GCS stream error:`, err.message);
+                reject(new Error(`GCS stream error: ${err.message}`));
+              })
+              .on("finish", () => {
+                resolve(transferred);
+              });
+          },
+        );
+
+        const duration = (Date.now() - attemptStart) / 1000;
+        const totalDuration = (Date.now() - startTime) / 1000;
+        const speedMBps = bytesTransferred / 1024 / 1024 / duration;
+
+        console.log(`\n${"=".repeat(80)}`);
+        console.log(`✓ SUCCESS: ${args.fileName}`);
+        console.log(`  Size: ${formatBytes(bytesTransferred)}`);
+        console.log(`  GCS path: ${gcsFileName}`);
+        console.log(
+          `  Duration: ${duration.toFixed(1)}s (${speedMBps.toFixed(2)} MB/s)`,
+        );
+        console.log(`  Total time: ${totalDuration.toFixed(1)}s`);
+        console.log(`${"=".repeat(80)}\n`);
+
+        return gcsFileName;
+      } catch (error: any) {
+        lastError = error;
+        console.error(`Attempt ${attempt} failed:`, error.message);
+
+        if (attempt < MAX_RETRIES) {
+          const delay = 2000 * Math.pow(2, attempt - 1);
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    const totalDuration = (Date.now() - startTime) / 1000;
+    console.error(`\n${"=".repeat(80)}`);
+    console.error(`✗ FAILED: ${args.fileName}`);
+    console.error(`  Attempts: ${MAX_RETRIES}`);
+    console.error(`  Total time: ${totalDuration.toFixed(1)}s`);
+    console.error(`  Error: ${lastError?.message}`);
+    console.error(`${"=".repeat(80)}\n`);
+
+    throw new Error(
+      `GCS streaming upload failed after ${MAX_RETRIES} attempts: ${lastError?.message}`,
+    );
   },
 });
