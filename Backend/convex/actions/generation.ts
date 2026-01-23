@@ -370,6 +370,14 @@ export const generateSection = internalAction({
         finalDraftNumber: iteration,
       });
 
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.generation.checkGenerationComplete,
+        {
+          generationId: args.generationId,
+        },
+      );
+
       logPipelineEnd(
         "SECTION GENERATION",
         sectionDef.title,

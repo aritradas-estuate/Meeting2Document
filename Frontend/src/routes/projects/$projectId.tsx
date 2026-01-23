@@ -300,6 +300,10 @@ function ProjectDetail() {
     api.jobs.listArchived,
     isUserReady ? { projectId: convexProjectId } : 'skip',
   )
+  const latestGeneration = useQuery(
+    (api as any).documentGenerations?.getLatest,
+    isUserReady ? { projectId: convexProjectId } : 'skip',
+  )
 
   const archiveProject = useMutation(api.projects.archive)
   const restoreProject = useMutation(api.projects.restore)
@@ -349,6 +353,7 @@ function ProjectDetail() {
   type SynthesisStep = 'select' | 'recommend' | 'generate' | 'view'
   const [synthesisStep, setSynthesisStep] = useState<SynthesisStep>('select')
   const [synthesisLoading, setSynthesisLoading] = useState(false)
+  const [synthesisError, setSynthesisError] = useState<string | null>(null)
   const [sectionRecommendations, setSectionRecommendations] = useState<
     Array<{
       sectionId: string
@@ -377,15 +382,37 @@ function ProjectDetail() {
   )
 
   useEffect(() => {
+    if (!currentGeneration) return
+
+    console.log(
+      '[Synthesis] Generation status changed:',
+      currentGeneration.status,
+    )
+
     if (
-      currentGeneration?.status === 'recommending' &&
+      currentGeneration.status === 'recommending' &&
       currentGeneration.recommendations
     ) {
       setSectionRecommendations(currentGeneration.recommendations)
       setSynthesisLoading(false)
       setSynthesisStep('recommend')
+    } else if (currentGeneration.status === 'failed') {
+      console.error(
+        '[Synthesis] Generation failed:',
+        currentGeneration.errorMessage,
+      )
+      setSynthesisLoading(false)
+      setSynthesisError(currentGeneration.errorMessage || 'Unknown error')
+      setSynthesisStep('select')
+    } else if (currentGeneration.status === 'analyzing') {
+      setSynthesisError(null)
+      setSynthesisLoading(true)
     }
-  }, [currentGeneration?.status, currentGeneration?.recommendations])
+  }, [
+    currentGeneration?.status,
+    currentGeneration?.recommendations,
+    currentGeneration?.errorMessage,
+  ])
 
   useEffect(() => {
     if (currentDocument?.sections) {
@@ -397,6 +424,37 @@ function ProjectDetail() {
       }
     }
   }, [currentDocument?.sections, currentDocument?.markdownContent])
+
+  useEffect(() => {
+    if (latestGeneration && !currentGenerationId) {
+      console.log(
+        '[Synthesis] Restoring state from latest generation:',
+        latestGeneration.status,
+      )
+      setCurrentGenerationId(latestGeneration._id)
+
+      if (latestGeneration.status === 'analyzing') {
+        setSynthesisLoading(true)
+        setSynthesisStep('select')
+      } else if (
+        latestGeneration.status === 'recommending' &&
+        latestGeneration.recommendations
+      ) {
+        setSectionRecommendations(latestGeneration.recommendations)
+        setSynthesisStep('recommend')
+      } else if (latestGeneration.status === 'generating') {
+        setSynthesisStep('generate')
+      } else if (latestGeneration.status === 'completed') {
+        setSynthesisStep('generate')
+      } else if (latestGeneration.status === 'failed') {
+        console.error(
+          '[Synthesis] Previous generation failed:',
+          latestGeneration.errorMessage,
+        )
+        setSynthesisStep('select')
+      }
+    }
+  }, [latestGeneration, currentGenerationId])
 
   const isLoading = !isUserReady || project === undefined
   const error = isUserReady && project === null ? 'Project not found' : null
@@ -1515,23 +1573,62 @@ function ProjectDetail() {
             Document Synthesis
           </h2>
 
+          {synthesisError && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-red-800">
+                    Synthesis Error
+                  </p>
+                  <p className="text-sm text-red-700 mt-1">{synthesisError}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSynthesisError(null)
+                    setCurrentGenerationId(null)
+                    setSynthesisStep('select')
+                  }}
+                  className="text-red-500 hover:text-red-700 text-sm underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           {synthesisStep === 'select' && (
             <SourceSelector
               extractions={extractions}
               onStartSynthesis={async (sources) => {
                 setSynthesisLoading(true)
+                setSynthesisError(null)
                 try {
-                  if (createGeneration && startSynthesis) {
-                    const generationId = await createGeneration({
-                      projectId: convexProjectId,
-                      selectedSources: sources,
+                  if (!createGeneration || !startSynthesis) {
+                    console.error('[Synthesis] API functions not available:', {
+                      createGeneration: !!createGeneration,
+                      startSynthesis: !!startSynthesis,
                     })
-                    setCurrentGenerationId(generationId)
-                    await startSynthesis({ generationId })
+                    throw new Error(
+                      'Document synthesis API not available. Please refresh the page.',
+                    )
                   }
-                } catch (err) {
-                  console.error('Failed to start synthesis:', err)
+                  console.log(
+                    '[Synthesis] Starting synthesis with',
+                    sources.length,
+                    'sources',
+                  )
+                  const generationId = await createGeneration({
+                    projectId: convexProjectId,
+                    selectedSources: sources,
+                  })
+                  console.log('[Synthesis] Created generation:', generationId)
+                  setCurrentGenerationId(generationId)
+                  await startSynthesis({ generationId })
+                  console.log('[Synthesis] Synthesis action started')
+                } catch (err: any) {
+                  console.error('[Synthesis] Failed to start synthesis:', err)
                   setSynthesisLoading(false)
+                  setSynthesisError(err.message || 'Unknown error')
                 }
               }}
               isStarting={synthesisLoading}
@@ -1544,20 +1641,33 @@ function ProjectDetail() {
               onStartGeneration={async (selectedSectionIds) => {
                 setSynthesisLoading(true)
                 try {
-                  if (
-                    currentGenerationId &&
-                    selectSections &&
-                    startGeneration
-                  ) {
-                    await selectSections({
-                      generationId: currentGenerationId,
-                      selectedSectionIds,
-                    })
-                    await startGeneration({ generationId: currentGenerationId })
-                    setSynthesisStep('generate')
+                  if (!currentGenerationId) {
+                    throw new Error('No active generation. Please start over.')
                   }
-                } catch (err) {
-                  console.error('Failed to start generation:', err)
+                  if (!selectSections || !startGeneration) {
+                    console.error('[Generation] API functions not available:', {
+                      selectSections: !!selectSections,
+                      startGeneration: !!startGeneration,
+                    })
+                    throw new Error(
+                      'Document generation API not available. Please refresh the page.',
+                    )
+                  }
+                  console.log(
+                    '[Generation] Selecting sections:',
+                    selectedSectionIds,
+                  )
+                  await selectSections({
+                    generationId: currentGenerationId,
+                    selectedSectionIds,
+                  })
+                  console.log('[Generation] Starting generation...')
+                  await startGeneration({ generationId: currentGenerationId })
+                  console.log('[Generation] Generation started')
+                  setSynthesisStep('generate')
+                } catch (err: any) {
+                  console.error('[Generation] Failed to start generation:', err)
+                  setSynthesisError(err.message || 'Unknown error')
                 } finally {
                   setSynthesisLoading(false)
                 }

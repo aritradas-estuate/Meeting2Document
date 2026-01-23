@@ -27,7 +27,7 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey });
 };
 
-const SYNTHESIS_MODEL = process.env.MODEL_SYNTHESIS || "gpt-4o";
+const SYNTHESIS_MODEL = process.env.MODEL_SYNTHESIS || "gpt-5.2";
 
 interface SourceData {
   fileName: string;
@@ -248,7 +248,7 @@ Remember: Only recommend sections where you found relevant information. Be conse
             content: userPrompt,
           },
         ],
-        max_tokens: 4000,
+        max_completion_tokens: 4000,
         temperature: 0.1,
       });
 

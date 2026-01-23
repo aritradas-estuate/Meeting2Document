@@ -4,7 +4,10 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import OpenAI from "openai";
-import { MEETING_EXTRACTION_PROMPT, EXTRACTION_JSON_SCHEMA } from "../lib/prompts";
+import {
+  MEETING_EXTRACTION_PROMPT,
+  EXTRACTION_JSON_SCHEMA,
+} from "../lib/prompts";
 
 const getOpenAIClient = () => {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -12,15 +15,20 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey });
 };
 
+const EXTRACTION_MODEL = process.env.MODEL_EXTRACTION || "gpt-5.2";
+
 export const extractSingle = internalAction({
   args: {
     transcriptId: v.id("transcripts"),
     keyIdeaId: v.id("keyIdeas"),
   },
   handler: async (ctx, args) => {
-    const transcript = await ctx.runQuery(internal.transcripts.getByIdInternal, {
-      transcriptId: args.transcriptId,
-    });
+    const transcript = await ctx.runQuery(
+      internal.transcripts.getByIdInternal,
+      {
+        transcriptId: args.transcriptId,
+      },
+    );
     if (!transcript) throw new Error("Transcript not found");
 
     const keyIdea = await ctx.runQuery(internal.keyIdeas.getByIdInternal, {
@@ -29,7 +37,9 @@ export const extractSingle = internalAction({
     if (!keyIdea) throw new Error("Key idea record not found");
 
     if (keyIdea.status === "completed" || keyIdea.status === "extracting") {
-      console.log(`KeyIdea ${args.keyIdeaId} already ${keyIdea.status}, skipping`);
+      console.log(
+        `KeyIdea ${args.keyIdeaId} already ${keyIdea.status}, skipping`,
+      );
       return;
     }
 
@@ -53,10 +63,13 @@ export const extractSingle = internalAction({
       const openai = getOpenAIClient();
       const transcriptText = transcript.text || "";
 
-      const prompt = MEETING_EXTRACTION_PROMPT.replace("{transcript}", transcriptText);
+      const prompt = MEETING_EXTRACTION_PROMPT.replace(
+        "{transcript}",
+        transcriptText,
+      );
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: EXTRACTION_MODEL,
         response_format: {
           type: "json_schema",
           json_schema: EXTRACTION_JSON_SCHEMA as any,
@@ -72,7 +85,7 @@ export const extractSingle = internalAction({
             content: prompt,
           },
         ],
-        max_tokens: 4000,
+        max_completion_tokens: 4000,
         temperature: 0,
       });
 
@@ -97,6 +110,8 @@ export const extractSingle = internalAction({
       });
     }
 
-    await ctx.runMutation(internal.jobs.checkCompletion, { jobId: transcript.jobId });
+    await ctx.runMutation(internal.jobs.checkCompletion, {
+      jobId: transcript.jobId,
+    });
   },
 });
