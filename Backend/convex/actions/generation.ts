@@ -4,11 +4,11 @@ import { internalAction, action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import Anthropic from "@anthropic-ai/sdk";
+import { getSectionById } from "../lib/templateLoader";
 import {
-  SECTION_WRITER_SYSTEM_PROMPT,
-  SECTION_REVIEWER_SYSTEM_PROMPT,
-} from "../lib/prompts";
-import { SECTION_SCHEMA, getSectionById } from "../lib/sectionSchema";
+  buildSectionWriterPrompt,
+  buildSectionReviewerPrompt,
+} from "../lib/promptBuilder";
 import {
   logPipelineStart,
   logPipelineEnd,
@@ -126,39 +126,27 @@ function buildSourceContext(sources: SourceData[]): string {
 async function writeDraft(
   anthropic: Anthropic,
   sectionId: string,
-  sectionTitle: string,
-  sectionDescription: string,
   sourceContext: string,
   previousDraft?: string,
   feedback?: string,
 ): Promise<string> {
-  let userPrompt = `Write the "${sectionTitle}" section of a Zuora Solution Design Document.
+  const { systemPrompt, sectionContext } = buildSectionWriterPrompt(sectionId);
 
-SECTION DESCRIPTION: ${sectionDescription}
-
-SOURCE MATERIAL:
-${sourceContext}
-
-`;
+  let userPrompt = sectionContext;
+  userPrompt += `\nSOURCE MATERIAL:\n${sourceContext}\n\n`;
 
   if (previousDraft && feedback) {
-    userPrompt += `
-PREVIOUS DRAFT:
-${previousDraft}
-
-REVIEWER FEEDBACK TO ADDRESS:
-${feedback}
-
-Please revise the section to address the reviewer's feedback while maintaining accuracy to the source material.`;
+    userPrompt += `PREVIOUS DRAFT:\n${previousDraft}\n\n`;
+    userPrompt += `REVIEWER FEEDBACK TO ADDRESS:\n${feedback}\n\n`;
+    userPrompt += `Please revise the section to address the reviewer's feedback while maintaining accuracy to the source material.`;
   } else {
-    userPrompt += `
-Write this section in Markdown format. Extract relevant information from the source material and organize it professionally. If specific information isn't available, note it with "[To be confirmed]".`;
+    userPrompt += `Write this section in Markdown format. Extract relevant information from the source material and organize it professionally.`;
   }
 
   const response = await anthropic.messages.create({
     model: WRITER_MODEL,
-    max_tokens: 4000,
-    system: SECTION_WRITER_SYSTEM_PROMPT,
+    max_tokens: 16000,
+    system: systemPrompt,
     messages: [
       {
         role: "user",
@@ -173,15 +161,13 @@ Write this section in Markdown format. Extract relevant information from the sou
 
 async function reviewDraft(
   anthropic: Anthropic,
-  sectionTitle: string,
-  sectionDescription: string,
+  sectionId: string,
   sourceContext: string,
   draft: string,
 ): Promise<{ approved: boolean; feedback?: string }> {
-  const userPrompt = `Review this draft of the "${sectionTitle}" section for a Zuora Solution Design Document.
+  const { systemPrompt, reviewContext } = buildSectionReviewerPrompt(sectionId);
 
-SECTION DESCRIPTION: ${sectionDescription}
-
+  const userPrompt = `${reviewContext}
 SOURCE MATERIAL (for reference):
 ${sourceContext}
 
@@ -192,8 +178,8 @@ Review the draft against the criteria in your instructions. If acceptable, respo
 
   const response = await anthropic.messages.create({
     model: REVIEWER_MODEL,
-    max_tokens: 2000,
-    system: SECTION_REVIEWER_SYSTEM_PROMPT,
+    max_tokens: 4000,
+    system: systemPrompt,
     messages: [
       {
         role: "user",
@@ -283,9 +269,10 @@ export const generateSection = internalAction({
         logIteration(iteration, MAX_ITERATIONS, "Writing draft...");
 
         const previousDraft = iteration > 1 ? currentDraft : undefined;
+        const lastEntry = generationHistory[generationHistory.length - 1];
         const previousFeedback =
-          generationHistory.length > 0
-            ? generationHistory[generationHistory.length - 1].reviewerFeedback
+          generationHistory.length > 0 && lastEntry
+            ? lastEntry.reviewerFeedback
             : undefined;
 
         logAICall(WRITER_MODEL, "write draft", sourceContext.length);
@@ -294,8 +281,6 @@ export const generateSection = internalAction({
         currentDraft = await writeDraft(
           anthropic,
           args.sectionId,
-          sectionDef.title,
-          sectionDef.description,
           sourceContext,
           previousDraft,
           previousFeedback,
@@ -319,8 +304,7 @@ export const generateSection = internalAction({
 
         const review = await reviewDraft(
           anthropic,
-          sectionDef.title,
-          sectionDef.description,
+          args.sectionId,
           sourceContext,
           currentDraft,
         );

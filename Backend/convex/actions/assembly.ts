@@ -3,7 +3,8 @@
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import { getAllSections, getSectionById } from "../lib/sectionSchema";
+import { getAllSections, getSectionById } from "../lib/templateLoader";
+import { buildFrontMatter } from "../lib/promptBuilder";
 import {
   logPipelineStart,
   logPipelineEnd,
@@ -13,48 +14,7 @@ import {
   logError,
 } from "../lib/logger";
 
-function generateTableOfContents(
-  sections: Array<{ sectionId: string; sectionTitle: string }>,
-): string {
-  let toc = "## Table of Contents\n\n";
 
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    if (!section) continue;
-    const sectionDef = getSectionById(section.sectionId);
-    const anchor = section.sectionTitle
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-");
-
-    if (sectionDef?.parentSection) {
-      toc += `   ${i + 1}. [${section.sectionTitle}](#${anchor})\n`;
-    } else {
-      toc += `${i + 1}. [${section.sectionTitle}](#${anchor})\n`;
-    }
-  }
-
-  return toc + "\n---\n\n";
-}
-
-function generateCoverPage(projectName: string, generatedAt: Date): string {
-  const dateStr = generatedAt.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
-  return `# ${projectName}
-
-## Zuora Solution Design Document
-
-**Generated:** ${dateStr}
-
-**Version:** 1.0
-
----
-
-`;
-}
 
 export const assembleDocument = internalAction({
   args: {
@@ -104,23 +64,18 @@ export const assembleDocument = internalAction({
         `Completed sections: ${completedSections.length}/${document.sections.length}`,
       );
 
-      logStep(2, 4, "Generating cover page...");
-      let markdown = generateCoverPage(
+      logStep(2, 4, "Generating front matter (cover, TOC, revision history)...");
+      const sectionsList = completedSections.map((s: any) => ({
+        sectionId: s.sectionId,
+        sectionTitle: s.sectionTitle,
+      }));
+      let markdown = buildFrontMatter(
         project?.name || "Solution Design Document",
-        new Date(),
+        sectionsList,
       );
-      logStep(2, 4, "Cover page ready", "success");
+      logStep(2, 4, `Front matter with ${completedSections.length} TOC entries`, "success");
 
-      logStep(3, 4, "Generating table of contents...");
-      markdown += generateTableOfContents(
-        completedSections.map((s: any) => ({
-          sectionId: s.sectionId,
-          sectionTitle: s.sectionTitle,
-        })),
-      );
-      logStep(3, 4, `TOC with ${completedSections.length} entries`, "success");
-
-      logStep(4, 4, "Assembling sections...");
+      logStep(3, 3, "Assembling sections...");
       const assembledSections: string[] = [];
       let currentParent: string | null = null;
 
@@ -153,8 +108,8 @@ export const assembleDocument = internalAction({
       markdown += `\n\n---\n\n*Document generated automatically from workshop transcripts.*\n`;
 
       logStep(
-        4,
-        4,
+        3,
+        3,
         `Assembled ${completedSections.length} sections`,
         "success",
       );

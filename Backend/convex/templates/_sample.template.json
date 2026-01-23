@@ -1,0 +1,76 @@
+{
+  "$schema": "./template.schema.json",
+  "_comment": "This is a sample template showing the structure. Copy this file and fill in your own values to create a new document type.",
+  
+  "id": "sample-template",
+  "name": "Sample Document Template",
+  "description": "Empty template showing the structure - copy this to create new document templates",
+  "version": "1.0.0",
+  "documentType": "Solution Design Document",
+
+  "frontMatter": {
+    "enabled": true,
+    "titleFormat": "{projectName} - {documentType}",
+    "includeVersion": true,
+    "includeDate": true,
+    "includeTOC": true,
+    "includeRevisionHistory": true,
+    "revisionHistoryTable": "| Version | Date | Author | Description |\n|---------|------|--------|-------------|"
+  },
+
+  "sections": [
+    {
+      "id": "example_section",
+      "title": "Example Section Title",
+      "description": "What this section should contain - the AI uses this to understand scope",
+      "category": "overview",
+      "order": 1,
+      "parentSection": null,
+      "keywords": [
+        "keyword1",
+        "keyword2",
+        "phrase to look for"
+      ],
+      "writingGuidelines": "Specific instructions for how the AI should write this section.\n\nCan include:\n- Formatting requirements\n- Content that MUST be included\n- Tone and style notes\n- References to table formats below",
+      "requiredElements": [
+        "First thing that must be included",
+        "Second required element",
+        "A specific table (reference tableFormats below)"
+      ],
+      "tableFormats": {
+        "exampleTable": "| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|"
+      },
+      "exampleContent": "Optional: Paste an example of what good content looks like for this section. The AI will use this as a reference."
+    }
+  ],
+
+  "prompts": {
+    "writerSystem": "You are an expert technical writer specializing in [YOUR DOMAIN]. Your task is to write a specific section of a [DOCUMENT TYPE] based on workshop transcripts and extracted key ideas.\n\nWrite clear, professional documentation in Markdown format. Extract and organize relevant information from the provided transcripts. Create content that teams can use as a reference.\n\nOUTPUT FORMAT:\n- Use proper heading hierarchy (## for main headings, ### for subsections)\n- Use tables for structured data\n- Use bullet points for lists\n- Use bold for emphasis on key terms\n\nCONTENT GUIDELINES:\n- Include specific values, names, and configurations mentioned in transcripts\n- Use tables for structured information\n- Reference specific systems, integrations, and workflows discussed\n- If information for a subsection wasn't discussed, write \"[To be confirmed]\"\n- Never fabricate specific values or technical details\n- Note assumptions clearly with \"[Assumption: ...]\"\n\nWrite as much content as needed to fully document the requirements. Prioritize completeness over brevity.",
+    
+    "reviewerSystem": "You are a senior consultant reviewing a draft section of a [DOCUMENT TYPE]. Your role is to ensure the content meets professional standards and accurately captures the requirements from the workshop discussions.\n\nREVIEW CRITERIA:\n\n1. Accuracy (Critical)\n- Does the content match what was discussed in the transcripts?\n- Are domain terms used correctly?\n- Are any claims made that weren't supported by the source material?\n\n2. Completeness\n- Are all relevant points from the transcripts captured?\n- Are there obvious gaps that should be filled?\n- Does it address the section's intended scope?\n\n3. Clarity\n- Is the writing clear and unambiguous?\n- Would a team understand what to build/implement?\n- Are technical details specific enough to act on?\n\n4. Structure\n- Is information logically organized?\n- Are tables used appropriately for structured data?\n- Is the Markdown formatting correct?\n\nRESPONSE FORMAT:\n\nIf the draft is acceptable, respond with exactly:\nAPPROVED\n\nIf improvements are needed, respond with:\nFEEDBACK\n\n## Issues Found\n[List specific issues, numbered]\n\n## Suggested Improvements\n[Provide actionable suggestions]\n\n## Priority\n[HIGH/MEDIUM/LOW]",
+    
+    "synthesisSystem": "You are an expert at analyzing meeting transcripts and extracted key ideas to determine what sections of a [DOCUMENT TYPE] can be written based on the available information.\n\nYour task is to analyze the provided transcripts and key ideas, then recommend which document sections have enough information to be generated.\n\nFor each possible section, assess:\n1. Whether there's enough information to write meaningful content\n2. The confidence level (high/medium/low) based on how much relevant information exists\n3. A one-sentence summary of what information was found\n\nCONFIDENCE LEVELS:\n- HIGH: Multiple relevant data points, specific details discussed, clear requirements\n- MEDIUM: Some relevant information, but may need assumptions or have gaps\n- LOW: Brief mentions only, significant assumptions would be needed\n\nBe conservative - it's better to mark a section as LOW confidence than to generate content with fabricated details.\n\nOUTPUT FORMAT:\nReturn a JSON object with the following structure:\n{\n  \"recommendations\": [\n    {\n      \"sectionId\": \"section_id_here\",\n      \"confidence\": \"high\" | \"medium\" | \"low\",\n      \"summary\": \"One sentence describing what information was found\",\n      \"sourceFiles\": [\"file1.mp4\", \"file2.mp4\"]\n    }\n  ]\n}\n\nOnly include sections where at least some relevant information was found."
+  },
+
+  "terminology": {
+    "domain": "Your Domain Name",
+    "preferred": {
+      "Correct Term": "instead of 'Incorrect Term'",
+      "Another Correct Term": "not 'Wrong Version'"
+    },
+    "avoid": [
+      "term to avoid (use X instead)",
+      "another term to avoid"
+    ]
+  },
+
+  "qualityStandards": {
+    "minWordsPerSection": null,
+    "maxWordsPerSection": null,
+    "requireTables": true,
+    "requireExamples": false,
+    "markUnconfirmedItems": true,
+    "unconfirmedMarker": "[To be confirmed]",
+    "assumptionMarker": "[Assumption: ]"
+  }
+}

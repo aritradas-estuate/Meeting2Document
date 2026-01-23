@@ -1,0 +1,406 @@
+{
+  "id": "zuora-sdd",
+  "name": "Zuora Solution Design Document",
+  "description": "Technical blueprint for Zuora billing and subscription management implementations following the Quote-to-Revenue (Q2R) framework",
+  "version": "1.0.0",
+  "documentType": "Solution Design Document",
+
+  "frontMatter": {
+    "enabled": true,
+    "titleFormat": "{projectName} - Solution Design Document",
+    "includeVersion": true,
+    "includeDate": true,
+    "includeTOC": true,
+    "includeRevisionHistory": true,
+    "revisionHistoryTable": "| Version | Date | Author | Description |\n|---------|------|--------|-------------|\n| 1.0 | {date} | Generated | Initial document generation |"
+  },
+
+  "sections": [
+    {
+      "id": "document_purpose",
+      "title": "Document Purpose",
+      "description": "Clear statement of document intent, scope, and what systems/solutions it covers",
+      "category": "overview",
+      "order": 1,
+      "parentSection": null,
+      "keywords": ["purpose", "scope", "objective", "goal", "project", "document", "intent"],
+      "writingGuidelines": "Write a clear, single-paragraph statement explaining:\n- What this document defines\n- What systems and solutions it covers\n- The project name and client\n\nUse this template as a starting point:\n\"The purpose of this document is to define the requirements, assumptions, solution, and high-level business use cases for building the billing and subscription management solution on Zuora for the [CLIENT NAME] Zuora Implementation.\"\n\nKeep this section concise - 1-2 paragraphs maximum.",
+      "requiredElements": [
+        "Document intent statement",
+        "Systems/solutions covered",
+        "Project identification"
+      ],
+      "tableFormats": {}
+    },
+    {
+      "id": "business_overview",
+      "title": "Business Overview",
+      "description": "Client's business model, products/services, current systems, and why they need Zuora",
+      "category": "overview",
+      "order": 2,
+      "parentSection": null,
+      "keywords": ["business", "company", "product", "service", "model", "revenue", "customer", "current system", "existing", "today", "currently"],
+      "writingGuidelines": "Document the client's business context:\n\n1. What the company does (products/services offered)\n2. Their business model (subscription-based, usage-based, hybrid, etc.)\n3. Current systems being replaced or integrated\n4. Why they need Zuora (pain points, goals)\n5. Key business metrics if mentioned (customer count, transaction volume, etc.)\n\nInclude direct quotes from workshops when they explain their business model.",
+      "requiredElements": [
+        "Company description",
+        "Products/services overview",
+        "Business model explanation",
+        "Current state/systems",
+        "Reasons for Zuora implementation"
+      ],
+      "tableFormats": {}
+    },
+    {
+      "id": "project_overview",
+      "title": "Project Overview",
+      "description": "Main implementation objectives, key systems involved, integration approach, and high-level workflow",
+      "category": "overview",
+      "order": 3,
+      "parentSection": null,
+      "keywords": ["implementation", "integration", "system", "workflow", "approach", "timeline", "objective", "phase", "milestone", "goal", "scope"],
+      "writingGuidelines": "Provide a high-level overview of the implementation project:\n\n1. Primary implementation objectives (bullet list)\n2. Key systems involved (table format)\n3. Integration approach summary\n4. High-level timeline or phases if discussed\n5. Key milestones or go-live targets\n\nIf a timeline was discussed, include a visual representation using ASCII or describe the phases.",
+      "requiredElements": [
+        "Implementation objectives",
+        "Key systems table",
+        "Integration approach",
+        "Timeline/phases (if discussed)"
+      ],
+      "tableFormats": {
+        "keySystems": "| System | Role | Owner |\n|--------|------|-------|"
+      }
+    },
+    {
+      "id": "proposed_architecture",
+      "title": "Proposed Architecture",
+      "description": "Architecture diagram explanation, system integrations, data flow between components",
+      "category": "technical",
+      "order": 4,
+      "parentSection": null,
+      "keywords": ["architecture", "diagram", "flow", "integration", "API", "system", "data flow", "sync", "direction", "component"],
+      "writingGuidelines": "Describe the proposed system architecture:\n\n1. List all systems in the architecture\n2. Describe data flow direction between systems\n3. Identify integration methods (API, file, real-time, batch)\n4. Note any middleware or integration platforms\n\nIf possible, create an ASCII diagram showing the architecture:\n```\n[System A] ---> [Zuora Billing] ---> [System B]\n                    |\n                    v\n              [Zuora Revenue]\n```\n\nInclude a narrative explaining each component's role.",
+      "requiredElements": [
+        "System components list",
+        "Data flow description",
+        "Integration methods",
+        "Architecture narrative"
+      ],
+      "tableFormats": {
+        "integrations": "| Source System | Target System | Data Direction | Method | Objects/Data |\n|---------------|---------------|----------------|--------|--------------|"
+      }
+    },
+    {
+      "id": "project_scope",
+      "title": "Project Scope",
+      "description": "Inclusions/exclusions, project phases, key stakeholders, and reference documents",
+      "category": "technical",
+      "order": 5,
+      "parentSection": null,
+      "keywords": ["scope", "inclusion", "exclusion", "phase", "stakeholder", "requirement", "in scope", "out of scope", "responsible", "owner"],
+      "writingGuidelines": "Document the project scope with clear boundaries:\n\n1. SCOPE INCLUSIONS - Use numbered IDs (INC-01, INC-02, etc.)\n2. SCOPE EXCLUSIONS - What is explicitly NOT included\n3. PROJECT PHASES - If phased approach discussed\n4. KEY STAKEHOLDERS - Names and roles from both client and implementation teams\n5. REFERENCE DOCUMENTS - Any workbooks, requirements docs mentioned\n\nBe explicit about what's in and out of scope to prevent scope creep.",
+      "requiredElements": [
+        "Scope inclusions table with IDs",
+        "Scope exclusions list",
+        "Key stakeholders table",
+        "Reference documents table (if any)"
+      ],
+      "tableFormats": {
+        "inclusions": "| Inclusion ID | Description |\n|--------------|-------------|",
+        "stakeholders": "| Name | Role | Responsibilities |\n|------|------|------------------|",
+        "referenceDocuments": "| Reference ID | Document Title | Location |\n|--------------|----------------|----------|"
+      }
+    },
+    {
+      "id": "zuora_administration",
+      "title": "Zuora Administration",
+      "description": "Security policies, user roles and permissions, tenant profile settings, data access control",
+      "category": "technical",
+      "order": 6,
+      "parentSection": null,
+      "keywords": ["security", "user role", "permission", "tenant", "admin", "access", "profile", "setting", "configuration", "SMTP", "email"],
+      "writingGuidelines": "Document Zuora administrative configuration:\n\n1. SECURITY POLICIES - Password requirements, session timeouts, etc.\n2. USER ROLES - What roles will be configured and for whom\n3. TENANT PROFILE SETTINGS - Timezone, currency defaults, etc.\n4. DATA ACCESS CONTROL - Any data segmentation requirements\n5. EXTERNAL SMTP - Email configuration if discussed\n\nIf specific settings weren't discussed, note them as [To be confirmed] but include the section structure.",
+      "requiredElements": [
+        "Security policies overview",
+        "User roles and permissions",
+        "Tenant profile settings",
+        "Data access control approach"
+      ],
+      "tableFormats": {
+        "userRoles": "| Role Name | Description | Assigned To |\n|-----------|-------------|-------------|",
+        "tenantSettings": "| Setting | Value | Notes |\n|---------|-------|-------|"
+      }
+    },
+    {
+      "id": "notifications",
+      "title": "Notifications",
+      "description": "Callouts, email notifications to customers, event notifications, SMTP configuration",
+      "category": "technical",
+      "order": 7,
+      "parentSection": null,
+      "keywords": ["notification", "email", "callout", "event", "SMTP", "alert", "template", "trigger", "communication"],
+      "writingGuidelines": "Document the notification and communication configuration:\n\n1. CALLOUTS - External system notifications/webhooks\n2. EMAIL NOTIFICATIONS - Customer-facing emails (invoice, payment, etc.)\n3. EVENT NOTIFICATIONS - Internal system events\n4. SMTP CONFIGURATION - Email delivery settings\n\nList specific notification types that were discussed and their triggers.",
+      "requiredElements": [
+        "Callout configurations",
+        "Email notification templates",
+        "Event notification triggers",
+        "SMTP configuration (if discussed)"
+      ],
+      "tableFormats": {
+        "notifications": "| Notification Type | Trigger Event | Recipient | Template |\n|-------------------|---------------|-----------|----------|",
+        "callouts": "| Callout Name | Trigger | Target System | Payload |\n|--------------|---------|---------------|---------|"
+      }
+    },
+    {
+      "id": "q2r_price_to_offer",
+      "title": "Price to Offer (P2O)",
+      "description": "Pricing model overview, product catalog, charge models, rate plans, billing periods, taxation",
+      "category": "q2r",
+      "order": 8,
+      "parentSection": "Zuora Q2R Requirements",
+      "keywords": ["price", "pricing", "product", "catalog", "rate plan", "charge", "billing period", "tax", "SKU", "discount", "list price", "sell price", "flat fee", "per unit", "tiered", "overage", "usage", "recurring", "one-time", "product rate plan", "product rate plan charge"],
+      "writingGuidelines": "This is one of the most critical sections. Document the complete pricing model and product catalog:\n\n1. PRICING MODEL OVERVIEW\n   - How pricing works for this business (reseller, direct, etc.)\n   - Pricing tiers or variations\n   - Discount structures\n\n2. PRODUCT CATALOG STRUCTURE\n   - Explain the hierarchy: Product -> Product Rate Plan -> Product Rate Plan Charge\n   - How products are organized\n\n3. PRODUCTS TABLE\n   - List ALL products discussed with their rate plans\n   - Include billing periods for each rate plan\n   - Note charge types and models\n\n4. CHARGE MODELS TABLE\n   - Define each charge model used (Flat Fee, Per Unit, Tiered, Overage, etc.)\n   - Explain when each is used\n\n5. BILLING PERIODS\n   - Monthly, Quarterly, Annual, etc.\n   - How billing period affects revenue recognition\n\n6. FAIR VALUE / SSP\n   - If standalone selling price allocation is needed\n   - Or note if not applicable and why\n\n7. TAXATION\n   - Tax calculation approach (Avalara, native, manual)\n   - Tax codes if discussed\n\nInclude specific prices, SKU names, and configurations from the workshops. Use tables extensively.",
+      "requiredElements": [
+        "Pricing model narrative",
+        "Product catalog table with all products and rate plans",
+        "Charge models table with descriptions and use cases",
+        "Billing periods table",
+        "Taxation approach"
+      ],
+      "tableFormats": {
+        "productCatalog": "| Product | Product Rate Plan | Billing Period | Charge Type | Charge Model | Unit of Measure | Notes |\n|---------|-------------------|----------------|-------------|--------------|-----------------|-------|",
+        "chargeModels": "| Charge Model | Description | Use Case |\n|--------------|-------------|----------|",
+        "billingPeriods": "| Billing Period | Description | Revenue Recognition Impact |\n|----------------|-------------|---------------------------|"
+      },
+      "exampleContent": "### Pricing Model Overview\n\nThe company operates as a [reseller/direct seller], where [explain pricing approach]. The pricing model reflects [key characteristics].\n\n### Product Catalog Structure\n\nThe Zuora product catalog is organized in a three-tier hierarchy:\n\n| Level | Definition | Example |\n|-------|------------|--------|\n| **Product** | The top-level SKU definition | Product Name Here |\n| **Product Rate Plan** | Different billing/offering variations | Monthly Plan, Annual Plan |\n| **Product Rate Plan Charge** | The specific charge details | Per-user recurring charge |"
+    },
+    {
+      "id": "q2r_lead_to_quotes",
+      "title": "Lead to Quotes",
+      "description": "CRM integration (Salesforce CPQ, Zuora CPQ), account creation flow, quote workflow, contacts handling",
+      "category": "q2r",
+      "order": 9,
+      "parentSection": "Zuora Q2R Requirements",
+      "keywords": ["quote", "CPQ", "Salesforce", "CRM", "lead", "opportunity", "account creation", "quoting", "proposal", "contract"],
+      "writingGuidelines": "Document the quote-to-order process:\n\n1. CRM INTEGRATION\n   - Which CRM is used (Salesforce, HubSpot, etc.)\n   - CPQ solution (Zuora CPQ, Salesforce CPQ, other)\n   - Integration approach\n\n2. ACCOUNT CREATION FLOW\n   - How accounts are created (from CRM, manual, API)\n   - Data flow from opportunity to Zuora account\n   - Required fields for account creation\n\n3. QUOTE WORKFLOW\n   - Quote creation process\n   - Approval workflows if any\n   - Quote-to-subscription conversion\n\n4. CONTACTS HANDLING\n   - Bill-to and Sold-to contact management\n   - Contact sync between systems",
+      "requiredElements": [
+        "CRM integration approach",
+        "Account creation flow",
+        "Quote workflow description",
+        "Contacts handling"
+      ],
+      "tableFormats": {
+        "crmIntegration": "| CRM Object | Zuora Object | Sync Direction | Trigger |\n|------------|--------------|----------------|---------|",
+        "accountCreationFlow": "| Step | System | Action | Data |\n|------|--------|--------|------|"
+      }
+    },
+    {
+      "id": "q2r_order_to_subscription",
+      "title": "Order to Subscription Management (O2S)",
+      "description": "Subscription model, account relationships, lifecycle (create, renew, upgrade, downgrade, cancel, pause/resume)",
+      "category": "q2r",
+      "order": 10,
+      "parentSection": "Zuora Q2R Requirements",
+      "keywords": ["subscription", "order", "renewal", "upgrade", "downgrade", "cancel", "lifecycle", "term", "evergreen", "termed", "co-term", "amendment", "modification", "quantity", "pause", "resume", "add-on"],
+      "writingGuidelines": "This section documents the complete subscription lifecycle. Cover ALL of the following:\n\n1. SUBSCRIPTION MODEL OVERVIEW\n   - Term type (Termed vs Evergreen)\n   - Default term lengths\n   - Auto-renewal settings\n\n2. ACCOUNT RELATIONSHIPS\n   - Account-to-subscription relationship (1:1 or 1:many)\n   - Parent-child account scenarios if applicable\n   - Bill-to and Sold-to structures\n\n3. BILLING SETTINGS TABLE\n   - All billing configuration settings with specific values\n   - Proration rules\n   - Bill cycle day settings\n   - Invoice/payment settings\n\n4. SUBSCRIPTION LIFECYCLE - Document each scenario:\n\n   a. CREATE SUBSCRIPTION\n      - How subscriptions are created\n      - Initial term configuration\n      - Billing start alignment\n\n   b. RENEWAL\n      - Auto-renew settings\n      - Renewal term length\n      - Price changes at renewal\n\n   c. UPGRADE\n      - Mid-term product additions\n      - SKU tier upgrades\n      - Co-terming behavior\n      - Revenue impact\n\n   d. DOWNGRADE\n      - Quantity reductions\n      - Product removals\n      - Credit handling\n\n   e. CANCEL\n      - Cancellation process\n      - Refund/credit policies\n      - Early termination\n\n   f. PAUSE/RESUME (if applicable)\n      - Suspension handling\n      - Billing during pause\n\n5. NAMING CONVENTIONS\n   - Account number format\n   - Subscription number format\n   - Invoice number format\n\nInclude specific values for all settings discussed. Use the billing settings table format extensively.",
+      "requiredElements": [
+        "Subscription model overview",
+        "Account relationships description",
+        "Billing settings table (comprehensive)",
+        "Naming conventions table",
+        "Subscription lifecycle for each scenario: Create, Renew, Upgrade, Downgrade, Cancel"
+      ],
+      "tableFormats": {
+        "billingSettings": "| Setting | Value | Description |\n|---------|-------|-------------|",
+        "namingConventions": "| Object | Prefix | Format | Example |\n|--------|--------|--------|---------|",
+        "subscriptionLifecycle": "| Scenario | Configuration | Revenue Impact | Notes |\n|----------|---------------|----------------|-------|"
+      },
+      "exampleContent": "### Subscription Model Overview\n\n**Term Type:** Termed / Evergreen\n**Default Initial Term:** 12 months\n**Auto-Renewal:** Yes / No\n**Renewal Term:** [Same as initial / Custom]\n\n### Billing Settings\n\n| Setting | Value | Description |\n|---------|-------|-------------|\n| Bill Cycle Day | 1 | Day of month for billing |\n| Invoice Delivery | Email | How invoices are delivered |\n| Payment Terms | Net 30 | Days until payment due |"
+    },
+    {
+      "id": "q2r_rating_to_billing",
+      "title": "Rating to Billing (R2B)",
+      "description": "Billing overview (advance vs arrears), bill runs, billing batches, invoice templates and settings",
+      "category": "q2r",
+      "order": 11,
+      "parentSection": "Zuora Q2R Requirements",
+      "keywords": ["billing", "bill run", "invoice", "rating", "batch", "advance", "arrears", "invoice template", "bill cycle", "billing schedule", "proration"],
+      "writingGuidelines": "Document the billing process configuration:\n\n1. BILLING OVERVIEW\n   - Billing timing (in advance vs in arrears)\n   - Billing frequency alignment with products\n\n2. BILL RUNS\n   - Scheduled vs manual bill runs\n   - Bill run timing (day, time)\n   - Target date configuration\n\n3. BILLING BATCHES\n   - How customers are grouped for billing\n   - Batch scheduling\n\n4. INVOICE CONFIGURATION\n   - Invoice template requirements\n   - Invoice grouping rules\n   - Invoice delivery method\n\n5. BILLING RULES TABLE\n   - Comprehensive list of all billing rule settings",
+      "requiredElements": [
+        "Billing timing overview",
+        "Bill run configuration",
+        "Billing batches approach",
+        "Invoice template requirements",
+        "Billing rules table"
+      ],
+      "tableFormats": {
+        "billingRules": "| Rule | Setting | Description |\n|------|---------|-------------|",
+        "billRunSchedule": "| Bill Run Type | Frequency | Time | Target Date Logic |\n|---------------|-----------|------|-------------------|"
+      }
+    },
+    {
+      "id": "q2r_cash_to_collections",
+      "title": "Cash to Collections (C2C)",
+      "description": "Payment gateway, payment methods, payment runs, auto-pay, payment method updater, AR management",
+      "category": "q2r",
+      "order": 12,
+      "parentSection": "Zuora Q2R Requirements",
+      "keywords": ["payment", "gateway", "collection", "cash", "auto-pay", "AR", "dunning", "credit card", "ACH", "bank transfer", "refund", "write-off", "payment method"],
+      "writingGuidelines": "Document the payment and collections configuration:\n\n1. PAYMENT GATEWAY\n   - Which gateway(s) will be used\n   - Gateway configuration requirements\n   - Supported payment types\n\n2. PAYMENT METHODS\n   - Credit card handling\n   - ACH/bank transfer\n   - Other payment methods\n   - Default payment method rules\n\n3. PAYMENT RUNS\n   - Scheduled payment processing\n   - Payment retry logic\n   - Failed payment handling\n\n4. AUTO-PAY\n   - Auto-pay configuration\n   - Customer opt-in/opt-out\n\n5. PAYMENT METHOD UPDATER\n   - Card updater service if used\n\n6. AR MANAGEMENT\n   - Aging buckets\n   - Write-off policies\n   - Collections workflows\n   - Dunning if configured",
+      "requiredElements": [
+        "Payment gateway configuration",
+        "Payment methods supported",
+        "Payment run schedule",
+        "Auto-pay settings",
+        "AR management approach"
+      ],
+      "tableFormats": {
+        "paymentMethods": "| Payment Method | Supported | Auto-Pay Eligible | Notes |\n|----------------|-----------|-------------------|-------|",
+        "paymentGateway": "| Gateway | Type | Currencies | Configuration |\n|---------|------|------------|---------------|"
+      }
+    },
+    {
+      "id": "q2r_revenue_recognition",
+      "title": "Revenue Recognition to Finance (R2F)",
+      "description": "Revenue recognition model, accounting codes, revenue distribution rules, deferred revenue",
+      "category": "q2r",
+      "order": 13,
+      "parentSection": "Zuora Q2R Requirements",
+      "keywords": ["revenue", "recognition", "accounting", "deferred", "ASC 606", "finance", "GAAP", "ratable", "point in time", "over time", "performance obligation", "unbilled", "contract liability", "GL", "journal entry"],
+      "writingGuidelines": "Document the revenue recognition requirements:\n\n1. REVENUE RECOGNITION MODEL\n   - Recognition method (point in time vs over time)\n   - If dual-book (GAAP + management/ratable), document both\n   - ASC 606 compliance requirements\n\n2. PERFORMANCE OBLIGATIONS\n   - How performance obligations are identified\n   - Single vs multiple performance obligations\n   - Fair value/SSP allocation if needed\n\n3. ACCOUNTING CODES\n   - GL account mapping\n   - Revenue accounts\n   - Deferred revenue accounts\n   - Unbilled AR accounts\n\n4. REVENUE DISTRIBUTION RULES\n   - How revenue is distributed over time\n   - Partial period handling\n   - Contract modification treatment\n\n5. CONTRACT MODIFICATIONS\n   - How upgrades/downgrades affect revenue\n   - Prospective vs cumulative catch-up\n\n6. ACCOUNTING ENTRIES\n   - Sample journal entry flows\n   - Debit/credit patterns",
+      "requiredElements": [
+        "Revenue recognition model description",
+        "Performance obligation identification",
+        "Accounting codes/GL mapping",
+        "Revenue distribution rules",
+        "Contract modification treatment"
+      ],
+      "tableFormats": {
+        "revenueRecognition": "| Book Type | Method | Recognition Timing | Purpose |\n|-----------|--------|-------------------|---------|",
+        "accountingCodes": "| Account Type | GL Code | Description |\n|--------------|---------|-------------|",
+        "journalEntries": "| Event | Debit Account | Credit Account | Amount |\n|-------|---------------|----------------|--------|"
+      }
+    },
+    {
+      "id": "q2r_record_to_report",
+      "title": "Record to Report (R2R)",
+      "description": "Reporting requirements, GL journal entry exports, ERP integration (NetSuite, etc.)",
+      "category": "q2r",
+      "order": 14,
+      "parentSection": "Zuora Q2R Requirements",
+      "keywords": ["report", "GL", "journal", "ERP", "NetSuite", "export", "record", "reporting", "dashboard", "analytics", "data extract"],
+      "writingGuidelines": "Document the reporting and ERP integration requirements:\n\n1. REPORTING REQUIREMENTS\n   - Standard reports needed\n   - Custom report requirements\n   - Reporting frequency\n\n2. GL JOURNAL ENTRIES\n   - Journal entry format\n   - Posting frequency\n   - Detail level (summary vs transaction)\n\n3. ERP INTEGRATION\n   - Target ERP system (NetSuite, SAP, etc.)\n   - Data mapping requirements\n   - Sync frequency and method\n\n4. DATA EXTRACTS\n   - Any additional data extract needs\n   - File formats\n   - Delivery methods",
+      "requiredElements": [
+        "Reporting requirements list",
+        "GL journal entry configuration",
+        "ERP integration approach",
+        "Data extract requirements"
+      ],
+      "tableFormats": {
+        "reports": "| Report Name | Frequency | Purpose | Format |\n|-------------|-----------|---------|--------|",
+        "erpIntegration": "| Zuora Object | ERP Object | Sync Direction | Frequency |\n|--------------|------------|----------------|-----------|"
+      }
+    },
+    {
+      "id": "data_migration",
+      "title": "Data Migration",
+      "description": "Migration scope (accounts, subscriptions, payment methods, open AR), volumes, phases, source systems",
+      "category": "operational",
+      "order": 15,
+      "parentSection": null,
+      "keywords": ["migration", "migrate", "import", "data", "account migration", "historical", "volume", "legacy", "conversion", "cutover"],
+      "writingGuidelines": "Document the data migration approach:\n\n1. MIGRATION SCOPE\n   - What will be migrated (accounts, subscriptions, payment methods, invoices, etc.)\n   - What will NOT be migrated\n   - Historical data cutoff\n\n2. VOLUME ESTIMATES\n   - Number of accounts\n   - Number of subscriptions\n   - Number of invoices\n   - Number of payment methods\n\n3. SOURCE SYSTEMS\n   - Where data is coming from\n   - Data format/quality considerations\n\n4. MIGRATION PHASES\n   - Test/trial migration iterations\n   - Final migration timing\n   - Cutover approach\n\n5. DATA MAPPING\n   - Key field mappings\n   - Data transformation requirements",
+      "requiredElements": [
+        "Migration scope (in/out)",
+        "Volume estimates table",
+        "Source systems",
+        "Migration phases/timeline"
+      ],
+      "tableFormats": {
+        "migrationScope": "| Object Type | In Scope | Volume Estimate | Notes |\n|-------------|----------|-----------------|-------|",
+        "migrationPhases": "| Phase | Timing | Scope | Success Criteria |\n|-------|--------|-------|------------------|"
+      }
+    },
+    {
+      "id": "integration",
+      "title": "Integration",
+      "description": "Native integrations (Zuora 360, CPQ), third-party integrations, workflows, custom callouts",
+      "category": "operational",
+      "order": 16,
+      "parentSection": null,
+      "keywords": ["integration", "API", "workflow", "callout", "sync", "Salesforce", "NetSuite", "Z360", "Zuora 360", "REST", "SOAP", "webhook", "connector"],
+      "writingGuidelines": "Document ALL integration points:\n\n1. NATIVE ZUORA INTEGRATIONS\n   - Zuora 360 Sync (if using Salesforce)\n   - Zuora CPQ\n   - Zuora Revenue integration\n   - Any other native connectors\n\n2. THIRD-PARTY INTEGRATIONS\n   - CRM (Salesforce, HubSpot, etc.)\n   - ERP (NetSuite, SAP, etc.)\n   - Payment gateway\n   - Tax engine (Avalara, etc.)\n   - Other systems\n\n3. WORKFLOWS\n   - List all Zuora workflows configured\n   - Trigger conditions\n   - Actions performed\n\n4. CUSTOM CALLOUTS\n   - API integrations built\n   - Webhook configurations\n   - Custom development needs\n\n5. DATA FLOW DIAGRAM\n   - Show direction of data between systems\n   - Real-time vs batch\n   - Sync frequency",
+      "requiredElements": [
+        "Native integrations list",
+        "Third-party integrations table",
+        "Workflows list",
+        "Custom callouts (if any)",
+        "Data flow summary"
+      ],
+      "tableFormats": {
+        "integrations": "| System | Integration Type | Direction | Method | Objects Synced | Frequency |\n|--------|------------------|-----------|--------|----------------|-----------|",
+        "workflows": "| Workflow Name | Trigger | Actions | Status |\n|---------------|---------|---------|--------|"
+      }
+    },
+    {
+      "id": "assumptions_limitations",
+      "title": "Assumptions, Limitations & Open Questions",
+      "description": "Known constraints, out-of-scope items, items requiring clarification",
+      "category": "operational",
+      "order": 17,
+      "parentSection": null,
+      "keywords": ["assumption", "limitation", "constraint", "question", "open item", "TBD", "risk", "dependency", "blocker", "clarification"],
+      "writingGuidelines": "This section is CRITICAL for project governance. Document:\n\n1. ASSUMPTIONS\n   - Number each assumption (A-01, A-02, etc.)\n   - Include impact area\n   - Note if confirmed or assumed\n\n2. LIMITATIONS\n   - System limitations encountered\n   - Business process limitations\n   - Workarounds identified\n\n3. OUT OF SCOPE\n   - Items explicitly excluded\n   - Reason for exclusion\n\n4. OPEN QUESTIONS\n   - Prioritize by impact (High/Medium/Low)\n   - Assign owners\n   - Set target resolution dates if known\n\n5. DEPENDENCIES\n   - What depends on what\n   - External dependencies\n\n6. RISKS\n   - Identified risks\n   - Likelihood and impact\n   - Mitigation strategies",
+      "requiredElements": [
+        "Assumptions table with IDs",
+        "Limitations table",
+        "Out of scope list",
+        "Open questions table with priority and owner",
+        "Dependencies (if any)",
+        "Risks (if any)"
+      ],
+      "tableFormats": {
+        "assumptions": "| ID | Assumption | Impact Area | Status |\n|----|------------|-------------|--------|",
+        "limitations": "| Limitation | Description | Workaround |\n|------------|-------------|------------|",
+        "openQuestions": "| ID | Question | Priority | Owner | Target Date | Notes |\n|----|----------|----------|-------|-------------|-------|",
+        "risks": "| Risk | Likelihood | Impact | Mitigation |\n|------|------------|--------|------------|"
+      }
+    }
+  ],
+
+  "prompts": {
+    "writerSystem": "You are an expert technical writer specializing in Zuora billing and subscription management implementations. Your task is to write a specific section of a Zuora Solution Design Document (SDD) based on workshop transcripts and extracted key ideas.\n\nWrite clear, professional documentation in Markdown format. Extract and organize relevant information from the provided transcripts. Follow Zuora terminology and best practices. Create content that implementation teams can use as a reference.\n\nOUTPUT FORMAT:\n- Use proper heading hierarchy (## for main headings, ### for subsections)\n- Use tables extensively for structured data (products, settings, stakeholders, configurations)\n- Use bullet points for lists\n- Use bold for emphasis on key terms\n- Use numbered IDs for trackable items (BR-0001, A-01, INC-01, etc.)\n\nCONTENT GUIDELINES:\n\nBe Specific and Actionable:\n- Include specific values, names, and configurations mentioned in transcripts\n- Use tables for ALL structured information (product catalogs, billing settings, etc.)\n- Reference specific systems, integrations, and workflows discussed\n- Include direct quotes from workshops when they clarify requirements\n\nUse Professional Language:\n- Write in third person (\"The system will...\", \"Users can...\")\n- Use present tense for describing the solution\n- Avoid filler phrases and unnecessary words\n\nHandle Missing Information:\n- If information for a subsection wasn't discussed, write \"[To be confirmed]\"\n- Never fabricate specific values, prices, or technical details\n- Note assumptions clearly with \"[Assumption: ...]\"\n\nZuora-Specific Terminology:\n- \"Product Rate Plan\" not \"Plan\" or \"Rate Plan\"\n- \"Product Rate Plan Charge\" for charges\n- \"Subscription\" not \"Contract\" (unless referring to legal contracts)\n- \"Account\" for customer billing entity\n- \"Bill Run\" for billing execution\n- \"Payment Run\" for payment processing\n\nQUALITY STANDARDS:\n- Write as much content as needed to fully document the requirements\n- Prioritize completeness over brevity\n- Every section should be self-contained and readable\n- Include enough context that someone unfamiliar with the project can understand\n- Tables improve clarity and are strongly encouraged for any structured data",
+
+    "reviewerSystem": "You are a senior Zuora implementation consultant reviewing a draft section of a Solution Design Document. Your role is to ensure the content meets professional standards and accurately captures the requirements from the workshop discussions.\n\nREVIEW CRITERIA:\n\n1. Accuracy (Critical)\n- Does the content match what was discussed in the transcripts?\n- Are Zuora terms used correctly?\n- Are any claims made that weren't supported by the source material?\n\n2. Completeness\n- Are all relevant points from the transcripts captured?\n- Are there obvious gaps that should be filled?\n- Does it address the section's intended scope?\n- Are tables used for structured data?\n\n3. Clarity\n- Is the writing clear and unambiguous?\n- Would an implementation team understand what to build?\n- Are technical details specific enough to act on?\n\n4. Structure\n- Is information logically organized?\n- Are tables used appropriately for structured data?\n- Is the Markdown formatting correct?\n- Are IDs used for trackable items?\n\n5. Professionalism\n- Is the tone appropriate for a technical document?\n- Are there any grammatical or spelling issues?\n- Is terminology consistent throughout?\n\nRESPONSE FORMAT:\n\nIf the draft is acceptable, respond with exactly:\nAPPROVED\n\nIf improvements are needed, respond with:\nFEEDBACK\n\n## Issues Found\n[List specific issues, numbered]\n\n## Suggested Improvements\n[Provide actionable suggestions for each issue]\n\n## Priority\n[HIGH/MEDIUM/LOW - indicating how critical the revisions are]\n\nFEEDBACK GUIDELINES:\n\nBe Specific:\nBAD: \"The product section needs more detail\"\nGOOD: \"The product catalog table is missing the charge model column. Add charge models (Flat Fee, Per Unit, Tiered, etc.) for each product rate plan charge.\"\n\nReference Source Material:\nBAD: \"Add more integration details\"\nGOOD: \"The transcript mentions a Salesforce integration for account sync - this should be documented with sync direction and objects.\"\n\nWHEN TO APPROVE:\n- Core information from transcripts is accurately captured\n- Content is clear and actionable\n- Zuora terminology is correct\n- No fabricated or unsupported claims\n- Structure and formatting are acceptable\n- Tables are used for structured data\n\nDon't be overly perfectionist - approve if the content is good enough for a professional document.\n\nWHEN TO REQUEST REVISIONS:\n- Factual errors or misrepresentations of transcript content\n- Missing critical information that was clearly discussed\n- Incorrect Zuora terminology that could cause confusion\n- Content is too vague to be actionable\n- Significant structural problems\n- Important tables are missing when data warrants tabular format",
+
+    "synthesisSystem": "You are an expert at analyzing meeting transcripts and extracted key ideas to determine what sections of a Zuora Solution Design Document can be written based on the available information.\n\nYour task is to analyze the provided transcripts and key ideas, then recommend which document sections have enough information to be generated.\n\nFor each possible section, assess:\n1. Whether there's enough information to write meaningful content\n2. The confidence level (high/medium/low) based on how much relevant information exists\n3. A one-sentence summary of what information was found\n\nCONFIDENCE LEVELS:\n- HIGH: Multiple relevant data points, specific details discussed, clear requirements stated\n- MEDIUM: Some relevant information exists, but may need assumptions or have gaps\n- LOW: Brief mentions only, significant assumptions would be needed\n\nBe conservative - it's better to mark a section as LOW confidence than to generate content with fabricated details.\n\nOUTPUT FORMAT:\nReturn a JSON object with the following structure:\n{\n  \"recommendations\": [\n    {\n      \"sectionId\": \"section_id_here\",\n      \"confidence\": \"high\" | \"medium\" | \"low\",\n      \"summary\": \"One sentence describing what information was found\",\n      \"sourceFiles\": [\"file1.mp4\", \"file2.mp4\"]\n    }\n  ]\n}\n\nOnly include sections where at least some relevant information was found. Omit sections with no relevant content."
+  },
+
+  "terminology": {
+    "domain": "Zuora Billing and Subscription Management",
+    "preferred": {
+      "Product Rate Plan": "not 'Plan' or 'Rate Plan' alone",
+      "Product Rate Plan Charge": "not 'Charge' alone when referring to catalog",
+      "Subscription": "not 'Contract' when referring to Zuora object",
+      "Account": "for customer billing entity",
+      "Bill Run": "not 'Billing Run' or 'Invoice Run'",
+      "Payment Run": "not 'Payment Processing Run'",
+      "Amendment": "for subscription changes (legacy) or Order Action (Orders)",
+      "Order": "for subscription creation/changes in Orders model"
+    },
+    "avoid": [
+      "Contract (use Subscription for Zuora object)",
+      "Plan (use Product Rate Plan)",
+      "Rate Plan (use Product Rate Plan)",
+      "Invoice Run (use Bill Run)"
+    ]
+  },
+
+  "qualityStandards": {
+    "minWordsPerSection": null,
+    "maxWordsPerSection": null,
+    "requireTables": true,
+    "requireExamples": false,
+    "markUnconfirmedItems": true,
+    "unconfirmedMarker": "[To be confirmed]",
+    "assumptionMarker": "[Assumption: ]"
+  }
+}

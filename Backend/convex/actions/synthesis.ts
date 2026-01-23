@@ -4,12 +4,12 @@ import { internalAction, action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import OpenAI from "openai";
-import { SYNTHESIS_SYSTEM_PROMPT } from "../lib/prompts";
 import {
   SECTION_SCHEMA,
-  SECTION_KEYWORDS,
   getAllSections,
-} from "../lib/sectionSchema";
+  getSynthesisSystemPrompt,
+} from "../lib/templateLoader";
+import { buildSectionList } from "../lib/promptBuilder";
 import {
   logPipelineStart,
   logPipelineEnd,
@@ -125,19 +125,7 @@ function buildSourceContext(sources: SourceData[]): string {
   return context;
 }
 
-function buildSectionList(): string {
-  const sections = getAllSections();
-  let sectionList = "AVAILABLE SECTIONS:\n\n";
 
-  for (const section of sections) {
-    const keywords = SECTION_KEYWORDS[section.id] || [];
-    sectionList += `- ${section.id}: "${section.title}"\n`;
-    sectionList += `  Description: ${section.description}\n`;
-    sectionList += `  Keywords to look for: ${keywords.join(", ")}\n\n`;
-  }
-
-  return sectionList;
-}
 
 export const analyze = internalAction({
   args: {
@@ -241,7 +229,7 @@ Remember: Only recommend sections where you found relevant information. Be conse
         messages: [
           {
             role: "system",
-            content: SYNTHESIS_SYSTEM_PROMPT,
+            content: getSynthesisSystemPrompt(),
           },
           {
             role: "user",
