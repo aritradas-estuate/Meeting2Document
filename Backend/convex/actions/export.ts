@@ -276,12 +276,9 @@ function markdownToGoogleDocsRequests(
        const numRows = rows.length + 1;
        const numCols = headers.length;
 
-       if (numCols === 0) continue;
+        if (numCols === 0) continue;
 
-       // [DEBUG] Before insertTable
-       console.log(`[TABLE DEBUG] Before insertTable: currentIndex=${currentIndex}, numRows=${numRows}, numCols=${numCols}, requestCount=${requests.length}`);
-
-       requests.push({
+        requests.push({
          insertTable: {
            location: { index: currentIndex },
            rows: numRows,
@@ -326,19 +323,16 @@ function markdownToGoogleDocsRequests(
         return b.col - a.col;
       });
 
-       for (const cell of cellInsertions) {
-         requests.push({
-           insertText: {
-             location: { index: getCellIndex(cell.row, cell.col) },
-             text: cell.text,
-           },
-         });
-       }
+        for (const cell of cellInsertions) {
+          requests.push({
+            insertText: {
+              location: { index: getCellIndex(cell.row, cell.col) },
+              text: cell.text,
+            },
+          });
+        }
 
-       // [DEBUG] After cell insertions
-       console.log(`[TABLE DEBUG] After cell insertions: cellInsertions.length=${cellInsertions.length}, totalTextInserted=${cellInsertions.reduce((sum, cell) => sum + cell.text.length, 0)}`);
-
-       let headerOffset = 0;
+        let headerOffset = 0;
       for (let col = 0; col < numCols; col++) {
         const text = headerTexts[col];
         if (text) {
@@ -358,13 +352,10 @@ function markdownToGoogleDocsRequests(
         }
       }
 
-       const totalTextInserted = cellInsertions.reduce((sum, cell) => sum + cell.text.length, 0);
-       const tableStructureSize = 1 + numRows * (1 + numCols * 2) + 1;
-       
-       // [DEBUG] After tableStructureSize calculation
-       console.log(`[TABLE DEBUG] After tableStructureSize calc: tableStructureSize=${tableStructureSize}, formula=(1 + ${numRows} * (1 + ${numCols} * 2) + 1), totalTextInserted=${totalTextInserted}`);
-       
-        currentIndex += tableStructureSize + totalTextInserted;
+        const totalTextInserted = cellInsertions.reduce((sum, cell) => sum + cell.text.length, 0);
+        const tableStructureSize = 1 + numRows * (1 + numCols * 2) + 1;
+
+         currentIndex += tableStructureSize + totalTextInserted;
      }
   }
 
