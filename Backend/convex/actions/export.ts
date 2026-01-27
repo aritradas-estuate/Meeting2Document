@@ -293,69 +293,10 @@ function markdownToGoogleDocsRequests(
        * Insert cells in REVERSE order (last cell first) because each insertText
        * shifts indices for content after the insertion point.
        */
-      const getCellIndex = (row: number, col: number): number => {
-        return currentIndex + 4 + (row * (numCols * 2 + 1)) + (col * 2);
-      };
-
-      const cellInsertions: { row: number; col: number; text: string }[] = [];
-      const headerTexts: string[] = [];
-
-      for (let col = 0; col < numCols; col++) {
-        const headerText = stripMarkdownFormatting(headers[col]);
-        headerTexts.push(headerText);
-        if (headerText) {
-          cellInsertions.push({ row: 0, col, text: headerText });
-        }
-      }
-
-      for (let row = 0; row < rows.length; row++) {
-        const rowData = rows[row];
-        for (let col = 0; col < numCols; col++) {
-          const cellText = stripMarkdownFormatting(rowData[col] || "");
-          if (cellText) {
-            cellInsertions.push({ row: row + 1, col, text: cellText });
-          }
-        }
-      }
-
-      cellInsertions.sort((a, b) => {
-        if (a.row !== b.row) return b.row - a.row;
-        return b.col - a.col;
-      });
-
-        for (const cell of cellInsertions) {
-          requests.push({
-            insertText: {
-              location: { index: getCellIndex(cell.row, cell.col) },
-              text: cell.text,
-            },
-          });
-        }
-
-        let headerOffset = 0;
-      for (let col = 0; col < numCols; col++) {
-        const text = headerTexts[col];
-        if (text) {
-          const baseIndex = getCellIndex(0, col);
-          const adjustedIndex = baseIndex + headerOffset;
-          requests.push({
-            updateTextStyle: {
-              range: {
-                startIndex: adjustedIndex,
-                endIndex: adjustedIndex + text.length,
-              },
-              textStyle: { bold: true },
-              fields: "bold",
-            },
-          });
-          headerOffset += text.length;
-        }
-      }
-
-        const totalTextInserted = cellInsertions.reduce((sum, cell) => sum + cell.text.length, 0);
-        const tableStructureSize = 1 + numRows * (1 + numCols * 2) + 1;
-
-         currentIndex += tableStructureSize + totalTextInserted;
+      // TODO: Cell text insertion disabled due to index calculation bug causing
+      // "insertion index must be inside bounds" errors. Tables export as empty grids.
+      const tableStructureSize = 1 + numRows * (1 + numCols * 2) + 1;
+      currentIndex += tableStructureSize;
      }
   }
 
