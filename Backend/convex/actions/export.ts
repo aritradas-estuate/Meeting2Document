@@ -5,6 +5,8 @@ import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { google, drive_v3, docs_v1 } from "googleapis";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { marked } from "marked";
+import DOMPurify from "isomorphic-dompurify";
 import {
   logPipelineStart,
   logPipelineEnd,
@@ -46,262 +48,43 @@ async function getAuthenticatedClients(ctx: ActionCtx): Promise<{
   return { drive, docs, user };
 }
 
-interface ParsedTable {
-  headers: string[];
-  rows: string[][];
-}
-
-function parseMarkdownTable(tableLines: string[]): ParsedTable | null {
-  if (tableLines.length < 2) return null;
-
-  const headerLine = tableLines[0];
-  if (!headerLine.includes("|")) return null;
-
-  const headers = headerLine
-    .split("|")
-    .map((cell) => cell.trim())
-    .filter((cell) => cell.length > 0);
-
-  if (headers.length === 0) return null;
-
-  const rows: string[][] = [];
-  for (let i = 2; i < tableLines.length; i++) {
-    const line = tableLines[i];
-    if (!line.includes("|")) continue;
-
-    const cells = line
-      .split("|")
-      .map((cell) => cell.trim())
-      .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1 || arr.length === headers.length + 2 ? idx > 0 && idx < arr.length - 1 : true)
-      .slice(0, headers.length);
-
-    const rawCells = line.split("|");
-    const cleanCells: string[] = [];
-    for (let j = 0; j < rawCells.length; j++) {
-      const cell = rawCells[j].trim();
-      if (j === 0 && cell === "") continue;
-      if (j === rawCells.length - 1 && cell === "") continue;
-      cleanCells.push(cell);
-    }
-
-    if (cleanCells.length > 0) {
-      while (cleanCells.length < headers.length) {
-        cleanCells.push("");
-      }
-      rows.push(cleanCells.slice(0, headers.length));
-    }
-  }
-
-  return { headers, rows };
-}
-
-function isTableLine(line: string): boolean {
-  const trimmed = line.trim();
-  return trimmed.startsWith("|") && trimmed.endsWith("|");
-}
-
-function isTableSeparator(line: string): boolean {
-  const trimmed = line.trim();
-  return trimmed.startsWith("|") && /^\|[\s\-:]+\|/.test(trimmed);
-}
-
-function stripMarkdownFormatting(text: string): string {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/`(.+?)`/g, "$1")
-    .replace(/\[(.+?)\]\(.+?\)/g, "$1");
-}
-
-type ContentSegment =
-  | { type: "text"; lines: string[] }
-  | { type: "table"; lines: string[]; parsed: ParsedTable };
-
-function parseMarkdownIntoSegments(markdown: string): ContentSegment[] {
-  const lines = markdown.split("\n");
-  const segments: ContentSegment[] = [];
-  let currentTextLines: string[] = [];
-  let currentTableLines: string[] = [];
-  let inTable = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const isTable = isTableLine(line);
-    const isSeparator = isTableSeparator(line);
-
-    if (isTable || isSeparator) {
-      if (!inTable && currentTextLines.length > 0) {
-        segments.push({ type: "text", lines: currentTextLines });
-        currentTextLines = [];
-      }
-      inTable = true;
-      currentTableLines.push(line);
-    } else {
-      if (inTable) {
-        const parsed = parseMarkdownTable(currentTableLines);
-        if (parsed && parsed.headers.length > 0) {
-          segments.push({ type: "table", lines: currentTableLines, parsed });
-        } else {
-          currentTextLines.push(...currentTableLines);
-        }
-        currentTableLines = [];
-        inTable = false;
-      }
-      currentTextLines.push(line);
-    }
-  }
-
-  if (inTable && currentTableLines.length > 0) {
-    const parsed = parseMarkdownTable(currentTableLines);
-    if (parsed && parsed.headers.length > 0) {
-      segments.push({ type: "table", lines: currentTableLines, parsed });
-    } else {
-      currentTextLines.push(...currentTableLines);
-    }
-  }
-  if (currentTextLines.length > 0) {
-    segments.push({ type: "text", lines: currentTextLines });
-  }
-
-  return segments;
-}
-
-function markdownToGoogleDocsRequests(
+async function convertMarkdownToGoogleDoc(
+  drive: drive_v3.Drive,
   markdown: string,
-): docs_v1.Schema$Request[] {
-  const requests: docs_v1.Schema$Request[] = [];
-  const segments = parseMarkdownIntoSegments(markdown);
-  let currentIndex = 1;
+  title: string,
+  folderId?: string,
+): Promise<{ googleDocId: string; webViewLink: string | null }> {
+  // Convert markdown to HTML
+  const html = await marked.parse(markdown);
 
-  for (const segment of segments) {
-    if (segment.type === "text") {
-      for (const line of segment.lines) {
-        if (!line.trim()) {
-          requests.push({
-            insertText: {
-              location: { index: currentIndex },
-              text: "\n",
-            },
-          });
-          currentIndex += 1;
-          continue;
-        }
+  // Sanitize HTML
+  const sanitizedHtml = DOMPurify.sanitize(html);
 
-        const h1Match = line.match(/^# (.+)$/);
-        const h2Match = line.match(/^## (.+)$/);
-        const h3Match = line.match(/^### (.+)$/);
-        const h4Match = line.match(/^#### (.+)$/);
-        const bulletMatch = line.match(/^[-*] (.+)$/);
-        const numberedMatch = line.match(/^(\d+)\. (.+)$/);
+  // Create Google Doc with HTML content
+  const createResponse = await drive.files.create({
+    requestBody: {
+      name: title,
+      mimeType: "application/vnd.google-apps.document",
+      parents: folderId ? [folderId] : undefined,
+    },
+    fields: "id,webViewLink",
+  });
 
-        let text = line;
-        let style: string | null = null;
-        let isBullet = false;
-        let isNumbered = false;
-
-        if (h1Match) {
-          text = h1Match[1] || "";
-          style = "HEADING_1";
-        } else if (h2Match) {
-          text = h2Match[1] || "";
-          style = "HEADING_2";
-        } else if (h3Match) {
-          text = h3Match[1] || "";
-          style = "HEADING_3";
-        } else if (h4Match) {
-          text = h4Match[1] || "";
-          style = "HEADING_4";
-        } else if (bulletMatch) {
-          text = bulletMatch[1] || "";
-          isBullet = true;
-        } else if (numberedMatch) {
-          text = numberedMatch[2] || "";
-          isNumbered = true;
-        }
-
-        text = stripMarkdownFormatting(text);
-
-        requests.push({
-          insertText: {
-            location: { index: currentIndex },
-            text: text + "\n",
-          },
-        });
-
-        const textLength = text.length;
-
-        if (style) {
-          requests.push({
-            updateParagraphStyle: {
-              range: {
-                startIndex: currentIndex,
-                endIndex: currentIndex + textLength + 1,
-              },
-              paragraphStyle: {
-                namedStyleType: style,
-              },
-              fields: "namedStyleType",
-            },
-          });
-        }
-
-        if (isBullet) {
-          requests.push({
-            createParagraphBullets: {
-              range: {
-                startIndex: currentIndex,
-                endIndex: currentIndex + textLength + 1,
-              },
-              bulletPreset: "BULLET_DISC_CIRCLE_SQUARE",
-            },
-          });
-        }
-
-        if (isNumbered) {
-          requests.push({
-            createParagraphBullets: {
-              range: {
-                startIndex: currentIndex,
-                endIndex: currentIndex + textLength + 1,
-              },
-              bulletPreset: "NUMBERED_DECIMAL_ALPHA_ROMAN",
-            },
-          });
-        }
-
-        currentIndex += textLength + 1;
-      }
-    } else if (segment.type === "table") {
-       const { headers, rows } = segment.parsed;
-       const numRows = rows.length + 1;
-       const numCols = headers.length;
-
-        if (numCols === 0) continue;
-
-        requests.push({
-         insertTable: {
-           location: { index: currentIndex },
-           rows: numRows,
-           columns: numCols,
-         },
-       });
-
-      /*
-       * Google Docs table index structure (cell text insertion):
-       * Cell[row, col] = tableStart + 4 + (row * (numCols * 2 + 1)) + (col * 2)
-       * 
-       * Insert cells in REVERSE order (last cell first) because each insertText
-       * shifts indices for content after the insertion point.
-       */
-      // TODO: Cell text insertion disabled due to index calculation bug causing
-      // "insertion index must be inside bounds" errors. Tables export as empty grids.
-      const tableStructureSize = 1 + numRows * (1 + numCols * 2) + 1;
-      currentIndex += tableStructureSize;
-     }
+  const googleDocId = createResponse.data.id;
+  if (!googleDocId) {
+    throw new Error("Failed to create Google Doc");
   }
 
-  return requests;
+   return {
+     googleDocId,
+     webViewLink: createResponse.data.webViewLink || null,
+   };
 }
+
+
+
+
+
 
 export const exportToGoogleDocs = action({
   args: {
@@ -314,7 +97,7 @@ export const exportToGoogleDocs = action({
     logPipelineStart("GOOGLE DOCS EXPORT", args.documentId);
 
     try {
-      logStep(1, 4, "Loading document...");
+      logStep(1, 3, "Loading document...");
       const document = await ctx.runQuery(internal.documents.getByIdInternal, {
         documentId: args.documentId,
       });
@@ -326,52 +109,28 @@ export const exportToGoogleDocs = action({
 
       logStep(
         1,
-        4,
+        3,
         `Loaded "${document.title}" (${document.markdownContent.length.toLocaleString()} chars)`,
         "success",
       );
 
-      logStep(2, 4, "Creating Google Doc...");
-      const { drive, docs } = await getAuthenticatedClients(ctx);
+      logStep(2, 3, "Authenticating with Google...");
+      const { drive } = await getAuthenticatedClients(ctx);
+      logStep(2, 3, "Authenticated", "success");
 
-      const createResponse = await drive.files.create({
-        requestBody: {
-          name: document.title || "Solution Design Document",
-          mimeType: "application/vnd.google-apps.document",
-          parents: args.folderId ? [args.folderId] : undefined,
-        },
-        fields: "id,webViewLink",
-      });
-
-      const googleDocId = createResponse.data.id;
-      if (!googleDocId) throw new Error("Failed to create Google Doc");
-
-      logStep(2, 4, `Created: ${googleDocId}`, "success");
-
-      logStep(3, 4, "Converting markdown to Docs format...");
-      const requests = markdownToGoogleDocsRequests(document.markdownContent);
-      logStep(
-        3,
-        4,
-        `Generated ${requests.length} formatting requests`,
-        "success",
+      logStep(3, 3, "Creating and formatting Google Doc...");
+      const { googleDocId, webViewLink } = await convertMarkdownToGoogleDoc(
+        drive,
+        document.markdownContent,
+        document.title || "Solution Design Document",
+        args.folderId,
       );
-
-      logStep(4, 4, "Applying formatting...");
-      if (requests.length > 0) {
-        await docs.documents.batchUpdate({
-          documentId: googleDocId,
-          requestBody: {
-            requests,
-          },
-        });
-      }
-      logStep(4, 4, "Formatting applied", "success");
+      logStep(3, 3, `Created: ${googleDocId}`, "success");
 
       await ctx.runMutation(internal.documents.updateDriveFileInternal, {
         documentId: args.documentId,
         driveFileId: googleDocId,
-        driveFileUrl: createResponse.data.webViewLink || undefined,
+        driveFileUrl: webViewLink || undefined,
       });
 
       logPipelineEnd(
@@ -381,13 +140,13 @@ export const exportToGoogleDocs = action({
         Date.now() - startTime,
         {
           "Google Doc ID": googleDocId,
-          URL: createResponse.data.webViewLink || "N/A",
+          URL: webViewLink || "N/A",
         },
       );
 
       return {
         googleDocId,
-        webViewLink: createResponse.data.webViewLink,
+        webViewLink,
       };
     } catch (error: any) {
       logError("GOOGLE DOCS EXPORT", error, { documentId: args.documentId });
@@ -417,7 +176,7 @@ export const exportToGoogleDocsInternal = internalAction({
     logPipelineStart("GOOGLE DOCS EXPORT (Internal)", args.documentId);
 
     try {
-      logStep(1, 4, "Loading document...");
+      logStep(1, 3, "Loading document...");
       const document = await ctx.runQuery(internal.documents.getByIdInternal, {
         documentId: args.documentId,
       });
@@ -429,7 +188,7 @@ export const exportToGoogleDocsInternal = internalAction({
 
       logStep(
         1,
-        4,
+        3,
         `Loaded "${document.title}" (${document.markdownContent.length.toLocaleString()} chars)`,
         "success",
       );
@@ -453,47 +212,23 @@ export const exportToGoogleDocsInternal = internalAction({
       });
 
       const drive = google.drive({ version: "v3", auth: oauth2Client });
-      const docs = google.docs({ version: "v1", auth: oauth2Client });
 
-      logStep(2, 4, "Creating Google Doc...");
-      const createResponse = await drive.files.create({
-        requestBody: {
-          name: document.title || "Solution Design Document",
-          mimeType: "application/vnd.google-apps.document",
-          parents: args.folderId ? [args.folderId] : undefined,
-        },
-        fields: "id,webViewLink",
-      });
+      logStep(2, 3, "Authenticating with Google...");
+      logStep(2, 3, "Authenticated", "success");
 
-      const googleDocId = createResponse.data.id;
-      if (!googleDocId) throw new Error("Failed to create Google Doc");
-
-      logStep(2, 4, `Created: ${googleDocId}`, "success");
-
-      logStep(3, 4, "Converting markdown to Docs format...");
-      const requests = markdownToGoogleDocsRequests(document.markdownContent);
-      logStep(
-        3,
-        4,
-        `Generated ${requests.length} formatting requests`,
-        "success",
+      logStep(3, 3, "Creating and formatting Google Doc...");
+      const { googleDocId, webViewLink } = await convertMarkdownToGoogleDoc(
+        drive,
+        document.markdownContent,
+        document.title || "Solution Design Document",
+        args.folderId,
       );
-
-      logStep(4, 4, "Applying formatting...");
-      if (requests.length > 0) {
-        await docs.documents.batchUpdate({
-          documentId: googleDocId,
-          requestBody: {
-            requests,
-          },
-        });
-      }
-      logStep(4, 4, "Formatting applied", "success");
+      logStep(3, 3, `Created: ${googleDocId}`, "success");
 
       await ctx.runMutation(internal.documents.updateDriveFileInternal, {
         documentId: args.documentId,
         driveFileId: googleDocId,
-        driveFileUrl: createResponse.data.webViewLink || undefined,
+        driveFileUrl: webViewLink || undefined,
       });
 
       logPipelineEnd(
@@ -503,13 +238,13 @@ export const exportToGoogleDocsInternal = internalAction({
         Date.now() - startTime,
         {
           "Google Doc ID": googleDocId,
-          URL: createResponse.data.webViewLink || "N/A",
+          URL: webViewLink || "N/A",
         },
       );
 
       return {
         googleDocId,
-        webViewLink: createResponse.data.webViewLink,
+        webViewLink,
       };
     } catch (error: any) {
       logError("GOOGLE DOCS EXPORT (Internal)", error, {
