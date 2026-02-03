@@ -6,7 +6,6 @@ import { v } from "convex/values";
 import { google, drive_v3, docs_v1 } from "googleapis";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { marked } from "marked";
-import DOMPurify from "isomorphic-dompurify";
 import {
   logPipelineStart,
   logPipelineEnd,
@@ -54,11 +53,7 @@ async function convertMarkdownToGoogleDoc(
   title: string,
   folderId?: string,
 ): Promise<{ googleDocId: string; webViewLink: string | null }> {
-  // Convert markdown to HTML
   const html = await marked.parse(markdown);
-
-  // Sanitize HTML
-  const sanitizedHtml = DOMPurify.sanitize(html);
 
   // Create Google Doc with HTML content
   const createResponse = await drive.files.create({
