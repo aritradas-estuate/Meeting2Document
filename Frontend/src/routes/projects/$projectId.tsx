@@ -26,6 +26,7 @@ import { SourceSelector } from '@/components/synthesis/SourceSelector'
 import { SectionRecommendations } from '@/components/synthesis/SectionRecommendations'
 import { GenerationProgress } from '@/components/synthesis/GenerationProgress'
 import { DocumentViewer } from '@/components/synthesis/DocumentViewer'
+import { ExportToGoogleDrive } from '@/components/synthesis/ExportToGoogleDrive'
 import type { DriveItem, Utterance, MeetingExtraction } from '@/types/api'
 import {
   ArrowLeft,
@@ -368,6 +369,11 @@ function ProjectDetail() {
     useState<Id<'documentGenerations'> | null>(null)
   const [viewingDocumentId, setViewingDocumentId] =
     useState<Id<'documents'> | null>(null)
+  const [exportingDocument, setExportingDocument] = useState<{
+    id: Id<'documents'>
+    title: string
+  } | null>(null)
+  const [wantsNewSynthesis, setWantsNewSynthesis] = useState(false)
 
   const currentGeneration = useQuery(
     (api as any).documentGenerations?.get,
@@ -426,6 +432,9 @@ function ProjectDetail() {
   }, [currentDocument?.sections, currentDocument?.markdownContent])
 
   useEffect(() => {
+    if (wantsNewSynthesis) {
+      return
+    }
     if (latestGeneration && !currentGenerationId) {
       console.log(
         '[Synthesis] Restoring state from latest generation:',
@@ -454,7 +463,7 @@ function ProjectDetail() {
         setSynthesisStep('select')
       }
     }
-  }, [latestGeneration, currentGenerationId])
+  }, [latestGeneration, currentGenerationId, wantsNewSynthesis])
 
   const isLoading = !isUserReady || project === undefined
   const error = isUserReady && project === null ? 'Project not found' : null
@@ -1568,10 +1577,31 @@ function ProjectDetail() {
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <Lightning className="h-5 w-5 text-primary" weight="duotone" />
-            Document Synthesis
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Lightning className="h-5 w-5 text-primary" weight="duotone" />
+              Document Synthesis
+            </h2>
+            {(synthesisStep === 'generate' ||
+              synthesisStep === 'view' ||
+              latestGeneration?.status === 'completed') && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setWantsNewSynthesis(true)
+                  setCurrentGenerationId(null)
+                  setSectionRecommendations([])
+                  setSynthesisStep('select')
+                  setSynthesisLoading(false)
+                  setSynthesisError(null)
+                }}
+              >
+                <ArrowClockwise className="h-4 w-4 mr-2" />
+                New Synthesis
+              </Button>
+            )}
+          </div>
 
           {synthesisError && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -1600,6 +1630,7 @@ function ProjectDetail() {
             <SourceSelector
               extractions={extractions}
               onStartSynthesis={async (sources) => {
+                setWantsNewSynthesis(false)
                 setSynthesisLoading(true)
                 setSynthesisError(null)
                 try {
@@ -1730,6 +1761,21 @@ function ProjectDetail() {
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
+                      {doc.markdownContent && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setExportingDocument({
+                              id: doc._id,
+                              title: doc.title,
+                            })
+                          }
+                        >
+                          <GoogleDriveLogo className="h-4 w-4 mr-2" />
+                          Export to Drive
+                        </Button>
+                      )}
                       {doc.driveFileUrl && (
                         <Button variant="outline" size="sm" asChild>
                           <a
@@ -1848,6 +1894,15 @@ function ProjectDetail() {
             setViewingDocumentId(null)
             setSynthesisStep('generate')
           }}
+        />
+      )}
+
+      {exportingDocument && (
+        <ExportToGoogleDrive
+          documentId={exportingDocument.id}
+          documentTitle={exportingDocument.title}
+          onClose={() => setExportingDocument(null)}
+          onSuccess={() => setExportingDocument(null)}
         />
       )}
     </div>

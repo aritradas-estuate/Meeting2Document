@@ -1,0 +1,12 @@
+Id,Name,Shape Library,Shape,Page ID,Line Source,Line Destination,Text Area 1
+1,Page,,,,,,MeetingsToDocument Pipeline
+2,Terminator,Flowchart Shapes,Terminator,1,,3,User Login (Google OAuth)
+3,Process,Flowchart Shapes,Process,1,,4,Create Project
+4,Process,Flowchart Shapes,Process,1,,5,Select Video Files from Drive
+5,Process,Flowchart Shapes,Process,1,,6,Transcribe with AssemblyAI
+6,Process,Flowchart Shapes,Process,1,,7,Extract Key Ideas (GPT-5.2)
+7,Process,Flowchart Shapes,Process,1,,8,Analyze & Recommend Sections (GPT-5.2)
+8,Process,Flowchart Shapes,Process,1,,9,Generate Sections (Claude Sonnet 4)
+9,Process,Flowchart Shapes,Process,1,,10,Assemble Document
+10,Process,Flowchart Shapes,Process,1,,11,Export to Google Docs
+11,Terminator,Flowchart Shapes,Terminator,1,,,Done

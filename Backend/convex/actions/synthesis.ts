@@ -275,6 +275,33 @@ Remember: Only recommend sections where you found relevant information. Be conse
         }
       }
 
+      const ALWAYS_INCLUDE_SECTIONS = [
+        "q2r_price_to_offer",
+        "q2r_lead_to_quotes",
+        "q2r_order_to_subscription",
+        "q2r_rating_to_billing",
+        "q2r_cash_to_collections",
+        "q2r_revenue_recognition",
+        "q2r_record_to_report",
+        "zuora_administration",
+      ];
+
+      for (const sectionId of ALWAYS_INCLUDE_SECTIONS) {
+        if (!recommendations.find((r) => r.sectionId === sectionId)) {
+          const sectionDef = SECTION_SCHEMA[sectionId];
+          if (sectionDef) {
+            recommendations.push({
+              sectionId,
+              sectionTitle: sectionDef.title,
+              confidence: "low",
+              summary:
+                "Not discussed in workshops. Include section with placeholder content.",
+              sourceFileNames: sources.map((s) => s.fileName),
+            });
+          }
+        }
+      }
+
       recommendations.sort((a, b) => {
         const confidenceOrder = { high: 0, medium: 1, low: 2 };
         return confidenceOrder[a.confidence] - confidenceOrder[b.confidence];

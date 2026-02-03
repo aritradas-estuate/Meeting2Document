@@ -92,10 +92,21 @@ export const assembleDocument = internalAction({
           currentParent = null;
         }
 
-        if (sectionDef?.parentSection) {
-          markdown += `### ${section.sectionTitle}\n\n`;
-        } else {
-          markdown += `## ${section.sectionTitle}\n\n`;
+        // Check if content already starts with a header matching section title
+        // to avoid duplicate headers like "## Title\n## Title"
+        const contentTrimmed = section.content.trim();
+        const headerMatch = contentTrimmed.match(/^#{1,4}\s*(.+?)[\n\r]/);
+        const contentStartsWithTitle = headerMatch && 
+          headerMatch[1].toLowerCase().trim().includes(
+            section.sectionTitle.toLowerCase().substring(0, 20)
+          );
+
+        if (!contentStartsWithTitle) {
+          if (sectionDef?.parentSection) {
+            markdown += `### ${section.sectionTitle}\n\n`;
+          } else {
+            markdown += `## ${section.sectionTitle}\n\n`;
+          }
         }
 
         markdown += section.content + "\n\n";
