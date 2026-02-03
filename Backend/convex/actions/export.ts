@@ -55,12 +55,15 @@ async function convertMarkdownToGoogleDoc(
 ): Promise<{ googleDocId: string; webViewLink: string | null }> {
   const html = await marked.parse(markdown);
 
-  // Create Google Doc with HTML content
   const createResponse = await drive.files.create({
     requestBody: {
       name: title,
       mimeType: "application/vnd.google-apps.document",
       parents: folderId ? [folderId] : undefined,
+    },
+    media: {
+      mimeType: "text/html",
+      body: html,
     },
     fields: "id,webViewLink",
   });
