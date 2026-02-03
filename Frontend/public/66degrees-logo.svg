@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="#FFFFFF" stroke="#C41E3A" stroke-width="2"/>
+  
+  <!-- "66" text in red -->
+  <text x="100" y="110" font-family="Arial, sans-serif" font-size="72" font-weight="bold" text-anchor="middle" fill="#C41E3A">66</text>
+  
+  <!-- "degrees" text in teal -->
+  <text x="100" y="155" font-family="Arial, sans-serif" font-size="18" font-weight="600" text-anchor="middle" fill="#5CBFB3" letter-spacing="1">DEGREES</text>
+  
+  <!-- Decorative angle indicator (teal) -->
+  <path d="M 140 70 L 160 70 L 160 90" stroke="#5CBFB3" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

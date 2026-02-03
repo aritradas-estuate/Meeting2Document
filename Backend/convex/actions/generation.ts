@@ -32,6 +32,49 @@ const REVIEWER_MODEL =
   process.env.MODEL_SECTION_REVIEWER || "claude-sonnet-4-20250514";
 const MAX_ITERATIONS = parseInt(process.env.MAX_REVIEW_ITERATIONS || "3", 10);
 
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 2000;
+const RETRYABLE_STATUS_CODES = [429, 529, 500, 502, 503, 504];
+
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  operationName: string,
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      
+      const statusCode = error.status || error.statusCode;
+      const isRetryable = RETRYABLE_STATUS_CODES.includes(statusCode);
+      const errorMessage = error.message || String(error);
+      const isOverloaded = errorMessage.includes("overloaded") || errorMessage.includes("Overloaded");
+      
+      if (!isRetryable && !isOverloaded) {
+        throw error;
+      }
+      
+      if (attempt === MAX_RETRIES - 1) {
+        logError(`${operationName} failed after ${MAX_RETRIES} attempts`, error, { 
+          statusCode, 
+          attempts: MAX_RETRIES 
+        });
+        throw error;
+      }
+      
+      const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
+      logDetail(`${operationName} failed (${statusCode || 'overloaded'}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError || new Error(`${operationName} failed after ${MAX_RETRIES} attempts`);
+}
+
 interface SourceData {
   fileName: string;
   transcript: string;
@@ -143,17 +186,20 @@ async function writeDraft(
     userPrompt += `Write this section in Markdown format. Extract relevant information from the source material and organize it professionally.`;
   }
 
-  const response = await anthropic.messages.create({
-    model: WRITER_MODEL,
-    max_tokens: 16000,
-    system: systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: userPrompt,
-      },
-    ],
-  });
+  const response = await withRetry(
+    () => anthropic.messages.create({
+      model: WRITER_MODEL,
+      max_tokens: 16000,
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: userPrompt,
+        },
+      ],
+    }),
+    "writeDraft"
+  );
 
   const textBlock = response.content.find((block) => block.type === "text");
   return textBlock?.text || "";
@@ -176,17 +222,20 @@ ${draft}
 
 Review the draft against the criteria in your instructions. If acceptable, respond with exactly "APPROVED". If improvements are needed, provide structured feedback.`;
 
-  const response = await anthropic.messages.create({
-    model: REVIEWER_MODEL,
-    max_tokens: 4000,
-    system: systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: userPrompt,
-      },
-    ],
-  });
+  const response = await withRetry(
+    () => anthropic.messages.create({
+      model: REVIEWER_MODEL,
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: userPrompt,
+        },
+      ],
+    }),
+    "reviewDraft"
+  );
 
   const textBlock = response.content.find((block) => block.type === "text");
   const reviewText = textBlock?.text || "";

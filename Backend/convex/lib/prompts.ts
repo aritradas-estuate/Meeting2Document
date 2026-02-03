@@ -39,6 +39,7 @@ OUTPUT FORMAT:
 - Use tables for structured data (products, settings, stakeholders)
 - Use bullet points for lists
 - Use bold for emphasis on key terms
+- Do NOT begin your response with a markdown header (## or ###) that repeats the section title. The section header is added automatically by the assembly layer.
 
 CONTENT GUIDELINES:
 

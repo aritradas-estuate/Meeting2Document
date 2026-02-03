@@ -150,8 +150,11 @@ export function buildFrontMatter(
   if (config.includeTOC && sections.length > 0) {
     frontMatter += "## Table of Contents\n\n";
 
-    let tocIndex = 1;
-    let currentParent: string | null = null;
+    // Build a map of parent section names to their numbers
+    const parentNumberMap = new Map<string, number>();
+    let mainSectionNumber = 0;
+    let currentParentName: string | null = null;
+    let currentParentNumber = 0;
 
     for (const section of sections) {
       const sectionDef = getSectionById(section.sectionId, templateId);
@@ -160,16 +163,36 @@ export function buildFrontMatter(
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/-+$/, "");
 
-      if (sectionDef?.parentSection && sectionDef.parentSection !== currentParent) {
-        currentParent = sectionDef.parentSection;
-      }
+      let tocNumber: string;
+      let indent = "";
 
       if (sectionDef?.parentSection) {
-        frontMatter += `   ${tocIndex}. [${section.sectionTitle}](#${anchor})\n`;
+        // This is a subsection
+        const parentName = sectionDef.parentSection;
+
+        // If we're switching to a new parent, increment the parent counter
+        if (parentName !== currentParentName) {
+          currentParentName = parentName;
+          mainSectionNumber++;
+          currentParentNumber = 0;
+          parentNumberMap.set(parentName, mainSectionNumber);
+        }
+
+        // Increment subsection counter
+        currentParentNumber++;
+        const parentNum = parentNumberMap.get(parentName) || mainSectionNumber;
+        tocNumber = `${parentNum}.${currentParentNumber}`;
+        indent = "   ";
       } else {
-        frontMatter += `${tocIndex}. [${section.sectionTitle}](#${anchor})\n`;
+        // This is a main section
+        mainSectionNumber++;
+        currentParentName = null;
+        currentParentNumber = 0;
+        tocNumber = `${mainSectionNumber}`;
+        indent = "";
       }
-      tocIndex++;
+
+      frontMatter += `${indent}${tocNumber}. [${section.sectionTitle}](#${anchor})\n`;
     }
 
     frontMatter += "\n---\n\n";
