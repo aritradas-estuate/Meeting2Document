@@ -32,8 +32,8 @@ const REVIEWER_MODEL =
   process.env.MODEL_SECTION_REVIEWER || "claude-sonnet-4-20250514";
 const MAX_ITERATIONS = parseInt(process.env.MAX_REVIEW_ITERATIONS || "3", 10);
 
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY_MS = 2000;
+const MAX_RETRIES = 5;
+const INITIAL_RETRY_DELAY_MS = 3000;
 const RETRYABLE_STATUS_CODES = [429, 529, 500, 502, 503, 504];
 
 async function withRetry<T>(

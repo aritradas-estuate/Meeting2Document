@@ -9,6 +9,7 @@
  */
 
 import type * as actions_assembly from "../actions/assembly.js";
+import type * as actions_assets from "../actions/assets.js";
 import type * as actions_drive from "../actions/drive.js";
 import type * as actions_export from "../actions/export.js";
 import type * as actions_extraction from "../actions/extraction.js";
@@ -39,6 +40,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/assembly": typeof actions_assembly;
+  "actions/assets": typeof actions_assets;
   "actions/drive": typeof actions_drive;
   "actions/export": typeof actions_export;
   "actions/extraction": typeof actions_extraction;
