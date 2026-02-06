@@ -28,6 +28,7 @@ import { GenerationProgress } from '@/components/synthesis/GenerationProgress'
 import { DocumentViewer } from '@/components/synthesis/DocumentViewer'
 import { ExportToGoogleDrive } from '@/components/synthesis/ExportToGoogleDrive'
 import type { DriveItem, Utterance, MeetingExtraction } from '@/types/api'
+import { isVideoFile, isDocumentFile, isSupportedFile, FileTypeIcon } from '@/lib/fileTypes'
 import {
   ArrowLeft,
   Folder,
@@ -578,10 +579,10 @@ function ProjectDetail() {
     }
   }
 
-  const selectAllVideosInFolder = (folderId: string) => {
+  const selectAllFilesInFolder = (folderId: string) => {
     const files =
       folderFiles[folderId]?.filter(
-        (f) => !f.is_folder && f.mime_type.includes('video'),
+        (f) => !f.is_folder && isSupportedFile(f.mime_type),
       ) || []
     const newSelected = [...selectedFiles]
     files.forEach((file) => {
@@ -644,16 +645,22 @@ function ProjectDetail() {
 
   const handleStartProcessing = async () => {
     if (!project) return
-    const videoFiles = selectedFiles.filter((f) =>
-      f.mime_type.includes('video'),
-    )
-    if (videoFiles.length === 0) return
+    const videoFiles = selectedFiles.filter((f) => isVideoFile(f.mime_type))
+    const documentFiles = selectedFiles.filter((f) => isDocumentFile(f.mime_type))
+    if (videoFiles.length === 0 && documentFiles.length === 0) return
 
     setIsStartingProcessing(true)
     try {
       await createJob({
         projectId: convexProjectId,
         videoFiles: videoFiles.map((f) => ({
+          id: f.id,
+          name: f.name,
+          mimeType: f.mime_type,
+          size: f.size || undefined,
+          webViewLink: f.web_view_link || undefined,
+        })),
+        documentFiles: documentFiles.map((f) => ({
           id: f.id,
           name: f.name,
           mimeType: f.mime_type,
@@ -695,17 +702,11 @@ function ProjectDetail() {
   }
 
   const getFileIcon = (file: DriveItem) => {
-    if (file.is_folder) {
-      return <Folder className="h-4 w-4 text-blue-500" weight="duotone" />
-    }
-    if (file.mime_type.includes('video')) {
-      return <Video className="h-4 w-4 text-purple-500" weight="duotone" />
-    }
-    return <File className="h-4 w-4 text-gray-500" weight="duotone" />
+    return <FileTypeIcon mimeType={file.is_folder ? 'application/vnd.google-apps.folder' : file.mime_type} className="h-4 w-4" />
   }
 
-  const videoFileCount = selectedFiles.filter((f) =>
-    f.mime_type.includes('video'),
+  const supportedFileCount = selectedFiles.filter((f) =>
+    isSupportedFile(f.mime_type),
   ).length
 
   const getJobStatusBadge = (status: string) => {
@@ -996,8 +997,8 @@ function ProjectDetail() {
                     const isExpanded = expandedFolders.has(folder.id)
                     const isLoadingFolder = loadingFolders.has(folder.id)
                     const files = folderFiles[folder.id] || []
-                    const videoFiles = files.filter((f) =>
-                      f.mime_type.includes('video'),
+                    const supportedFiles = files.filter((f) =>
+                      !f.is_folder && isSupportedFile(f.mime_type),
                     )
                     const selectedInFolder = files.filter((f) =>
                       selectedFiles.some((sf) => sf.id === f.id),
@@ -1026,23 +1027,23 @@ function ProjectDetail() {
                           <span className="font-medium flex-1">
                             {folder.name}
                           </span>
-                          {isExpanded && videoFiles.length > 0 && (
+                          {isExpanded && supportedFiles.length > 0 && (
                             <Button
                               variant="ghost"
                               size="xs"
                               onClick={() => {
                                 if (
-                                  selectedInFolder.length === videoFiles.length
+                                  selectedInFolder.length === supportedFiles.length
                                 ) {
                                   deselectAllInFolder(folder.id)
                                 } else {
-                                  selectAllVideosInFolder(folder.id)
+                                  selectAllFilesInFolder(folder.id)
                                 }
                               }}
                             >
-                              {selectedInFolder.length === videoFiles.length
+                              {selectedInFolder.length === supportedFiles.length
                                 ? 'Deselect All'
-                                : 'Select All Videos'}
+                                : 'Select All'}
                             </Button>
                           )}
                           <Button
@@ -1071,22 +1072,22 @@ function ProjectDetail() {
                                   const isSelected = selectedFiles.some(
                                     (f) => f.id === file.id,
                                   )
-                                  const isVideo =
-                                    file.mime_type.includes('video')
+                                  const isSelectable =
+                                    !file.is_folder && isSupportedFile(file.mime_type)
 
                                   return (
                                     <div
                                       key={file.id}
                                       className={`flex items-center gap-3 px-4 py-2 ${
-                                        isVideo
+                                        isSelectable
                                           ? 'hover:bg-muted/50 cursor-pointer'
                                           : 'opacity-60'
                                       } ${isSelected ? 'bg-primary/10' : ''}`}
                                       onClick={() =>
-                                        isVideo && toggleFileSelection(file)
+                                        isSelectable && toggleFileSelection(file)
                                       }
                                     >
-                                      {isVideo ? (
+                                      {isSelectable ? (
                                         isSelected ? (
                                           <CheckSquare
                                             className="h-4 w-4 text-primary"
@@ -1125,7 +1126,7 @@ function ProjectDetail() {
                 <div className="flex items-center gap-4 pt-4 border-t">
                   <Button
                     onClick={handleStartProcessing}
-                    disabled={videoFileCount === 0 || isStartingProcessing}
+                    disabled={supportedFileCount === 0 || isStartingProcessing}
                   >
                     {isStartingProcessing ? (
                       <>
@@ -1135,9 +1136,9 @@ function ProjectDetail() {
                     ) : (
                       <>
                         <Play className="h-4 w-4 mr-2" />
-                        {videoFileCount === 0
-                          ? 'Select videos to extract'
-                          : `Extract ${videoFileCount} video${videoFileCount > 1 ? 's' : ''}`}
+                        {supportedFileCount === 0
+                          ? 'Select files to process'
+                          : `Process ${supportedFileCount} file${supportedFileCount > 1 ? 's' : ''}`}
                       </>
                     )}
                   </Button>
