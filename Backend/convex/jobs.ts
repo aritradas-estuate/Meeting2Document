@@ -131,19 +131,21 @@ export const create = mutation({
   args: {
     projectId: v.id("projects"),
     videoFiles: v.array(driveFileValidator),
+    documentFiles: v.optional(v.array(driveFileValidator)),
     supportingFiles: v.optional(v.array(driveFileValidator)),
   },
   handler: async (ctx, args) => {
     await verifyProjectAccess(ctx, args.projectId);
 
-    if (!args.videoFiles.length) {
-      throw new Error("At least one video file is required");
+    if (!args.videoFiles.length && (!args.documentFiles || !args.documentFiles.length)) {
+      throw new Error("At least one video or document file is required");
     }
 
     const jobId = await ctx.db.insert("jobs", {
       projectId: args.projectId,
       status: "pending",
       videoFiles: args.videoFiles,
+      documentFiles: args.documentFiles,
       supportingFiles: args.supportingFiles,
       currentStage: undefined,
       stageProgress: undefined,

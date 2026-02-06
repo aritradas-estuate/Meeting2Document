@@ -35,11 +35,27 @@ async function verifyGenerationAccess(
   return generation;
 }
 
-const selectedSourceValidator = v.object({
-  transcriptId: v.id("transcripts"),
-  keyIdeaId: v.id("keyIdeas"),
-  fileName: v.string(),
-});
+const selectedSourceValidator = v.union(
+  // Legacy shape (existing records without sourceType field)
+  v.object({
+    transcriptId: v.id("transcripts"),
+    keyIdeaId: v.id("keyIdeas"),
+    fileName: v.string(),
+  }),
+  // New video shape
+  v.object({
+    sourceType: v.literal("video"),
+    transcriptId: v.id("transcripts"),
+    keyIdeaId: v.id("keyIdeas"),
+    fileName: v.string(),
+  }),
+  // New document shape
+  v.object({
+    sourceType: v.literal("document"),
+    sourceContentId: v.id("sourceContent"),
+    fileName: v.string(),
+  }),
+);
 
 const recommendationValidator = v.object({
   sectionId: v.string(),

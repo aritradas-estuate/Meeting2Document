@@ -61,6 +61,20 @@ const extractionStatusValidator = v.union(
   v.literal("failed"),
 );
 
+const sourceContentStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("extracting"),
+  v.literal("completed"),
+  v.literal("failed"),
+);
+
+const sourceTypeValidator = v.union(
+  v.literal("google_doc"),
+  v.literal("google_slides"),
+  v.literal("google_sheets"),
+  v.literal("pdf"),
+);
+
 const generationStatusValidator = v.union(
   v.literal("selecting"),
   v.literal("analyzing"),
@@ -105,6 +119,7 @@ export default defineSchema({
     projectId: v.id("projects"),
     status: jobStatusValidator,
     videoFiles: v.array(driveFileValidator),
+    documentFiles: v.optional(v.array(driveFileValidator)),
     supportingFiles: v.optional(v.array(driveFileValidator)),
     currentStage: v.optional(v.string()),
     stageProgress: v.optional(
@@ -172,6 +187,24 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_transcript", ["transcriptId"]),
 
+  sourceContent: defineTable({
+    jobId: v.id("jobs"),
+    projectId: v.id("projects"),
+    fileId: v.string(),
+    fileName: v.string(),
+    fileSize: v.optional(v.number()),
+    mimeType: v.string(),
+    sourceType: sourceTypeValidator,
+    status: sourceContentStatusValidator,
+    text: v.optional(v.string()),
+    error: v.optional(v.string()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_job", ["jobId"])
+    .index("by_project", ["projectId"])
+    .index("by_file", ["fileId"]),
+
   documents: defineTable({
     projectId: v.id("projects"),
     jobId: v.optional(v.id("jobs")),
@@ -217,11 +250,27 @@ export default defineSchema({
     projectId: v.id("projects"),
     status: generationStatusValidator,
     selectedSources: v.array(
-      v.object({
-        transcriptId: v.id("transcripts"),
-        keyIdeaId: v.id("keyIdeas"),
-        fileName: v.string(),
-      }),
+      v.union(
+        // Legacy shape (existing records without sourceType field)
+        v.object({
+          transcriptId: v.id("transcripts"),
+          keyIdeaId: v.id("keyIdeas"),
+          fileName: v.string(),
+        }),
+        // New video shape
+        v.object({
+          sourceType: v.literal("video"),
+          transcriptId: v.id("transcripts"),
+          keyIdeaId: v.id("keyIdeas"),
+          fileName: v.string(),
+        }),
+        // New document shape
+        v.object({
+          sourceType: v.literal("document"),
+          sourceContentId: v.id("sourceContent"),
+          fileName: v.string(),
+        }),
+      ),
     ),
     recommendations: v.optional(
       v.array(
