@@ -298,6 +298,10 @@ function ProjectDetail() {
     api.keyIdeas.list,
     isUserReady ? { projectId: convexProjectId } : 'skip',
   )
+  const sourceContentList = useQuery(
+    api.sourceContent.list,
+    isUserReady ? { projectId: convexProjectId } : 'skip',
+  )
   const archivedJobs = useQuery(
     api.jobs.listArchived,
     isUserReady ? { projectId: convexProjectId } : 'skip',
@@ -471,13 +475,48 @@ function ProjectDetail() {
   const isArchived = project?.status === 'archived'
 
   const extractions = useMemo(() => {
-    if (!transcripts || !keyIdeasList) return []
+    const items: Array<{
+      type: 'video' | 'document'
+      id: string
+      fileName: string
+      status: string
+      mimeType?: string
+      transcript?: any
+      keyIdea?: any
+      sourceContent?: any
+    }> = []
 
-    return transcripts.map((transcript: any) => ({
-      transcript,
-      keyIdea: keyIdeasList.find((k: any) => k.transcriptId === transcript._id),
-    }))
-  }, [transcripts, keyIdeasList])
+    if (transcripts && keyIdeasList) {
+      transcripts.forEach((transcript: any) => {
+        items.push({
+          type: 'video',
+          id: transcript._id,
+          fileName: transcript.fileName,
+          status: transcript.status,
+          mimeType: 'video/mp4',
+          transcript,
+          keyIdea: keyIdeasList.find(
+            (k: any) => k.transcriptId === transcript._id,
+          ),
+        })
+      })
+    }
+
+    if (sourceContentList) {
+      sourceContentList.forEach((sc: any) => {
+        items.push({
+          type: 'document',
+          id: sc._id,
+          fileName: sc.fileName,
+          status: sc.status,
+          mimeType: sc.mimeType,
+          sourceContent: sc,
+        })
+      })
+    }
+
+    return items
+  }, [transcripts, keyIdeasList, sourceContentList])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -948,7 +987,7 @@ function ProjectDetail() {
                 <div>
                   <CardTitle>Source Folders</CardTitle>
                   <CardDescription>
-                    Select video files from these folders to process
+                    Select files from these folders to process
                   </CardDescription>
                 </div>
                 <Button
@@ -1237,8 +1276,12 @@ function ProjectDetail() {
                       </DropdownMenu>
                     </div>
                     <CardDescription>
-                      {job.videoFiles.length} video file
-                      {job.videoFiles.length !== 1 ? 's' : ''}
+                      {job.videoFiles.length > 0 &&
+                        `${job.videoFiles.length} video file${job.videoFiles.length !== 1 ? 's' : ''}`}
+                      {job.videoFiles.length > 0 && job.documentFiles && job.documentFiles.length > 0 && ' + '}
+                      {job.documentFiles && job.documentFiles.length > 0 &&
+                        `${job.documentFiles.length} document${job.documentFiles.length !== 1 ? 's' : ''}`}
+                      {job.videoFiles.length === 0 && (!job.documentFiles || job.documentFiles.length === 0) && 'No files'}
                       {job.supportingFiles && job.supportingFiles.length > 0
                         ? ` + ${job.supportingFiles.length} supporting files`
                         : ''}
@@ -1289,6 +1332,11 @@ function ProjectDetail() {
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {job.videoFiles.map((file) => (
+                          <Badge key={file.id} variant="outline">
+                            {file.name}
+                          </Badge>
+                        ))}
+                        {job.documentFiles?.map((file: any) => (
                           <Badge key={file.id} variant="outline">
                             {file.name}
                           </Badge>
@@ -1413,14 +1461,10 @@ function ProjectDetail() {
             </Card>
           ) : (
             <div className="grid grid-cols-3 xl:grid-cols-4 gap-4">
-              {extractions.map(
-                ({
-                  transcript,
-                  keyIdea,
-                }: {
-                  transcript: any
-                  keyIdea: any
-                }) => {
+              {extractions.map((item) => {
+                if (item.type === 'video') {
+                  const { transcript, keyIdea } = item
+                  if (!transcript) return null
                   const isInProgress =
                     (transcript.status !== 'completed' &&
                       transcript.status !== 'failed') ||
@@ -1429,7 +1473,7 @@ function ProjectDetail() {
                       keyIdea.status !== 'failed')
 
                   return (
-                    <Card key={transcript._id}>
+                    <Card key={item.id}>
                       <CardHeader className="pb-2">
                         <div className="flex items-center gap-2">
                           <Video
@@ -1571,8 +1615,98 @@ function ProjectDetail() {
                       </CardContent>
                     </Card>
                   )
-                },
-              )}
+                }
+
+                const sc = item.sourceContent
+                if (!sc) return null
+                const isInProgress =
+                  sc.status !== 'completed' && sc.status !== 'failed'
+
+                return (
+                  <Card key={item.id}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center gap-2">
+                        <FileTypeIcon
+                          mimeType={item.mimeType || 'application/octet-stream'}
+                          className="h-5 w-5 shrink-0"
+                        />
+                        <CardTitle
+                          className="text-sm font-medium truncate flex-1"
+                          title={sc.fileName}
+                        >
+                          {sc.fileName.length > 80
+                            ? `${sc.fileName.slice(0, 80)}...`
+                            : sc.fileName}
+                        </CardTitle>
+                        {isInProgress && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-xs"
+                          >
+                            <SpinnerGap className="h-3 w-3 mr-1 animate-spin" />
+                            In Progress
+                          </Badge>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2 pt-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <FileText
+                            className="h-4 w-4 text-blue-500"
+                            weight="duotone"
+                          />
+                          <span>Document Content</span>
+                        </div>
+                        {sc.status === 'completed' ? (
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() =>
+                                setViewingContent({
+                                  type: 'transcript',
+                                  fileName: sc.fileName,
+                                  content:
+                                    sc.text || 'No content available',
+                                })
+                              }
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() =>
+                                downloadTranscript(
+                                  sc.fileName,
+                                  sc.text || '',
+                                )
+                              }
+                              disabled={!sc.text}
+                            >
+                              <DownloadSimple className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ) : sc.status === 'failed' ? (
+                          <Badge variant="destructive" className="text-xs">
+                            Failed
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">
+                            <SpinnerGap className="h-3 w-3 mr-1 animate-spin" />
+                            {sc.status === 'extracting'
+                              ? 'Extracting'
+                              : 'Pending'}
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           )}
         </section>

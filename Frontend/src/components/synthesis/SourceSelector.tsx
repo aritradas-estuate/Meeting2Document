@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Video,
   FileText,
   CheckSquare,
   Square,
@@ -17,9 +16,16 @@ import {
   Lightning,
 } from '@phosphor-icons/react'
 import { Id } from '../../../convex/_generated/dataModel'
+import { FileTypeIcon } from '@/lib/fileTypes'
 
-interface ExtractionData {
-  transcript: {
+export interface SourceItem {
+  type: 'video' | 'document'
+  id: string
+  fileName: string
+  status: string
+  mimeType?: string
+  // Video-specific
+  transcript?: {
     _id: Id<'transcripts'>
     fileName: string
     status: string
@@ -30,16 +36,32 @@ interface ExtractionData {
     status: string
     extraction?: any
   }
+  // Document-specific
+  sourceContent?: {
+    _id: Id<'sourceContent'>
+    fileName: string
+    status: string
+    text?: string
+    mimeType: string
+  }
 }
 
 interface SourceSelectorProps {
-  extractions: ExtractionData[]
+  extractions: SourceItem[]
   onStartSynthesis: (
-    selectedSources: Array<{
-      transcriptId: Id<'transcripts'>
-      keyIdeaId: Id<'keyIdeas'>
-      fileName: string
-    }>,
+    selectedSources: Array<
+      | {
+          sourceType: 'video'
+          transcriptId: Id<'transcripts'>
+          keyIdeaId: Id<'keyIdeas'>
+          fileName: string
+        }
+      | {
+          sourceType: 'document'
+          sourceContentId: Id<'sourceContent'>
+          fileName: string
+        }
+    >,
   ) => void
   isStarting: boolean
 }
@@ -51,23 +73,31 @@ export function SourceSelector({
 }: SourceSelectorProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
-  const completedExtractions = extractions.filter(
-    (e) =>
-      e.transcript.status === 'completed' && e.keyIdea?.status === 'completed',
-  )
+  const completedExtractions = extractions.filter((e) => {
+    if (e.type === 'video') {
+      return (
+        e.transcript?.status === 'completed' &&
+        e.keyIdea?.status === 'completed'
+      )
+    }
+    if (e.type === 'document') {
+      return e.sourceContent?.status === 'completed'
+    }
+    return false
+  })
 
-  const toggleSelection = (transcriptId: string) => {
+  const toggleSelection = (id: string) => {
     const newSelected = new Set(selectedIds)
-    if (newSelected.has(transcriptId)) {
-      newSelected.delete(transcriptId)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
     } else {
-      newSelected.add(transcriptId)
+      newSelected.add(id)
     }
     setSelectedIds(newSelected)
   }
 
   const selectAll = () => {
-    setSelectedIds(new Set(completedExtractions.map((e) => e.transcript._id)))
+    setSelectedIds(new Set(completedExtractions.map((e) => e.id)))
   }
 
   const clearSelection = () => {
@@ -76,12 +106,22 @@ export function SourceSelector({
 
   const handleStartSynthesis = () => {
     const selectedSources = completedExtractions
-      .filter((e) => selectedIds.has(e.transcript._id))
-      .map((e) => ({
-        transcriptId: e.transcript._id,
-        keyIdeaId: e.keyIdea!._id,
-        fileName: e.transcript.fileName,
-      }))
+      .filter((e) => selectedIds.has(e.id))
+      .map((e) => {
+        if (e.type === 'document' && e.sourceContent) {
+          return {
+            sourceType: 'document' as const,
+            sourceContentId: e.sourceContent._id,
+            fileName: e.fileName,
+          }
+        }
+        return {
+          sourceType: 'video' as const,
+          transcriptId: e.transcript!._id,
+          keyIdeaId: e.keyIdea!._id,
+          fileName: e.fileName,
+        }
+      })
 
     onStartSynthesis(selectedSources)
   }
@@ -110,8 +150,7 @@ export function SourceSelector({
               Document Synthesis
             </CardTitle>
             <CardDescription>
-              Select transcripts and key ideas to generate a Solution Design
-              Document
+              Select sources to generate a Solution Design Document
             </CardDescription>
           </div>
           <div className="flex gap-2">
@@ -133,21 +172,22 @@ export function SourceSelector({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          {completedExtractions.map(({ transcript, keyIdea }) => {
-            const isSelected = selectedIds.has(transcript._id)
-            const summaryPreview = keyIdea?.extraction?.summary
-              ? keyIdea.extraction.summary.substring(0, 150) + '...'
-              : null
+          {completedExtractions.map((item) => {
+            const isSelected = selectedIds.has(item.id)
+            const summaryPreview =
+              item.type === 'video' && item.keyIdea?.extraction?.summary
+                ? item.keyIdea.extraction.summary.substring(0, 150) + '...'
+                : null
 
             return (
               <div
-                key={transcript._id}
+                key={item.id}
                 className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
                   isSelected
                     ? 'bg-primary/10 border-primary/50'
                     : 'hover:bg-muted/50'
                 }`}
-                onClick={() => toggleSelection(transcript._id)}
+                onClick={() => toggleSelection(item.id)}
               >
                 <div className="pt-0.5">
                   {isSelected ? (
@@ -159,13 +199,18 @@ export function SourceSelector({
                     <Square className="h-5 w-5 text-muted-foreground" />
                   )}
                 </div>
-                <Video
-                  className="h-5 w-5 text-purple-500 shrink-0 mt-0.5"
-                  weight="duotone"
+                <FileTypeIcon
+                  mimeType={
+                    item.mimeType ||
+                    (item.type === 'video'
+                      ? 'video/mp4'
+                      : 'application/octet-stream')
+                  }
+                  className="h-5 w-5 shrink-0 mt-0.5"
                 />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">
-                    {transcript.fileName}
+                    {item.fileName}
                   </p>
                   {summaryPreview && (
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
@@ -173,14 +218,23 @@ export function SourceSelector({
                     </p>
                   )}
                   <div className="flex gap-2 mt-2">
-                    <Badge variant="secondary" className="text-xs">
-                      <FileText className="h-3 w-3 mr-1" />
-                      Transcript
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      <Lightning className="h-3 w-3 mr-1" />
-                      Key Ideas
-                    </Badge>
+                    {item.type === 'video' ? (
+                      <>
+                        <Badge variant="secondary" className="text-xs">
+                          <FileText className="h-3 w-3 mr-1" />
+                          Transcript
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          <Lightning className="h-3 w-3 mr-1" />
+                          Key Ideas
+                        </Badge>
+                      </>
+                    ) : (
+                      <Badge variant="secondary" className="text-xs">
+                        <FileText className="h-3 w-3 mr-1" />
+                        Document Content
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </div>
