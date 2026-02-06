@@ -208,6 +208,10 @@ export const extractContent = internalAction({
       console.log(
         `[contentExtraction] Successfully completed extraction for "${sourceContent.fileName}"`,
       );
+
+      await ctx.runMutation(internal.jobs.checkCompletion, {
+        jobId: sourceContent.jobId,
+      });
     } catch (error: any) {
       console.error(
         `[contentExtraction] Failed to extract "${sourceContent.fileName}":`,
@@ -231,6 +235,10 @@ export const extractContent = internalAction({
         sourceContentId,
         status: "failed",
         error: errorMessage,
+      });
+
+      await ctx.runMutation(internal.jobs.checkCompletion, {
+        jobId: sourceContent.jobId,
       });
     }
   },

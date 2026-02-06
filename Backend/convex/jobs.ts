@@ -33,6 +33,23 @@ async function verifyProjectAccess(ctx: any, projectId: Id<"projects">) {
   return { userId, project };
 }
 
+function getMimeSourceType(
+  mimeType: string,
+): "google_doc" | "google_slides" | "google_sheets" | "pdf" {
+  switch (mimeType) {
+    case "application/vnd.google-apps.document":
+      return "google_doc";
+    case "application/vnd.google-apps.presentation":
+      return "google_slides";
+    case "application/vnd.google-apps.spreadsheet":
+      return "google_sheets";
+    case "application/pdf":
+      return "pdf";
+    default:
+      throw new Error(`Unsupported document MIME type: ${mimeType}`);
+  }
+}
+
 export const list = query({
   args: {
     projectId: v.optional(v.id("projects")),
@@ -212,6 +229,15 @@ export const retry = mutation({
       await ctx.db.delete(keyIdea._id);
     }
 
+    const sourceContents = await ctx.db
+      .query("sourceContent")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .collect();
+
+    for (const sc of sourceContents) {
+      await ctx.db.delete(sc._id);
+    }
+
     await ctx.db.patch(args.jobId, {
       status: "pending",
       errorMessage: undefined,
@@ -298,6 +324,7 @@ export const startProcessing = internalMutation({
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Job not found");
 
+    // Process video files (existing behavior)
     for (const file of job.videoFiles) {
       const transcriptId = await ctx.db.insert("transcripts", {
         jobId: args.jobId,
@@ -318,26 +345,62 @@ export const startProcessing = internalMutation({
       });
     }
 
+    // Process document files
+    const documentFiles = job.documentFiles || [];
+    for (const file of documentFiles) {
+      const sourceType = getMimeSourceType(file.mimeType);
+      const sourceContentId = await ctx.db.insert("sourceContent", {
+        jobId: args.jobId,
+        projectId: job.projectId,
+        fileId: file.id,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.mimeType,
+        sourceType,
+        status: "pending",
+      });
+
+      // Schedule content extraction
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.contentExtraction.extractContent,
+        { sourceContentId },
+      );
+    }
+
+    const hasVideoFiles = job.videoFiles.length > 0;
+    const totalFiles = job.videoFiles.length + documentFiles.length;
+
+    // Set initial status based on what files exist
+    const initialStage = hasVideoFiles ? "transcribing" : "extracting";
+    const initialStatus = hasVideoFiles ? "transcribing" : "extracting";
+    const initialMessage = hasVideoFiles
+      ? "Starting transcription..."
+      : "Extracting document content...";
+
     await ctx.db.patch(args.jobId, {
-      status: "transcribing",
+      status: initialStatus,
       startedAt: Date.now(),
-      currentStage: "transcribing",
+      currentStage: initialStage,
       stageProgress: {
-        stage: "transcribing",
+        stage: initialStage,
         progress: 0,
-        message: "Starting transcription...",
+        message: initialMessage,
         filesCompleted: 0,
-        totalFiles: job.videoFiles.length,
+        totalFiles,
       },
     });
 
-    await ctx.scheduler.runAfter(
-      0,
-      internal.actions.transcription.startTranscription,
-      {
-        jobId: args.jobId,
-      },
-    );
+    // Only start transcription pipeline if there are video files
+    if (hasVideoFiles) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.transcription.startTranscription,
+        {
+          jobId: args.jobId,
+        },
+      );
+    }
   },
 });
 
@@ -382,27 +445,47 @@ export const checkCompletion = internalMutation({
       .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
       .collect();
 
-    if (keyIdeas.length === 0) return;
+    const sourceContents = await ctx.db
+      .query("sourceContent")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .collect();
 
-    const allDone = keyIdeas.every(
-      (k) => k.status === "completed" || k.status === "failed",
-    );
+    if (keyIdeas.length === 0 && sourceContents.length === 0) return;
 
-    if (!allDone) return;
+    const allKeyIdeasDone =
+      keyIdeas.length === 0 ||
+      keyIdeas.every(
+        (k) => k.status === "completed" || k.status === "failed",
+      );
+
+    const allSourceContentDone =
+      sourceContents.length === 0 ||
+      sourceContents.every(
+        (sc) => sc.status === "completed" || sc.status === "failed",
+      );
+
+    if (!allKeyIdeasDone || !allSourceContentDone) return;
 
     const transcripts = await ctx.db
       .query("transcripts")
       .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
       .collect();
 
-    const failedKeyIdeas = keyIdeas.filter((k) => k.status === "failed").length;
+    const failedKeyIdeas = keyIdeas.filter(
+      (k) => k.status === "failed",
+    ).length;
+    const failedSourceContents = sourceContents.filter(
+      (sc) => sc.status === "failed",
+    ).length;
     const failedTranscripts = transcripts.filter(
       (t) => t.status === "failed",
     ).length;
-    const totalItems = keyIdeas.length;
+    const totalFailed = failedKeyIdeas + failedSourceContents;
+    const totalItems = keyIdeas.length + sourceContents.length;
 
-    const allFailed = failedKeyIdeas === totalItems;
-    const someFailed = failedKeyIdeas > 0 || failedTranscripts > 0;
+    const allFailed = totalFailed === totalItems;
+    const someFailed =
+      totalFailed > 0 || failedTranscripts > 0;
 
     let finalStatus: "completed" | "failed";
     let message: string;
@@ -412,7 +495,7 @@ export const checkCompletion = internalMutation({
       message = "All extractions failed";
     } else if (someFailed) {
       finalStatus = "completed";
-      message = `Completed with ${failedKeyIdeas} of ${totalItems} failed`;
+      message = `Completed with ${totalFailed} of ${totalItems} failed`;
     } else {
       finalStatus = "completed";
       message = "Processing complete!";
