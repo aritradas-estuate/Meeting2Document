@@ -7,10 +7,9 @@ import type {
   SharedDrive,
   DriveBreadcrumb,
 } from "@/types/api";
+import { FileTypeIcon, isSupportedFile } from "@/lib/fileTypes";
 import {
   Folder,
-  File,
-  Video,
   HardDrives,
   CaretRight,
   House,
@@ -175,13 +174,14 @@ export function DriveBrowser({
 
   // Get icon for a drive item
   const getItemIcon = (item: DriveItem) => {
-    if (item.is_folder) {
-      return <Folder className="h-5 w-5 text-blue-500" weight="duotone" />;
-    }
-    if (item.mime_type.includes("video")) {
-      return <Video className="h-5 w-5 text-purple-500" weight="duotone" />;
-    }
-    return <File className="h-5 w-5 text-gray-500" weight="duotone" />;
+    const mimeType = item.is_folder ? 'application/vnd.google-apps.folder' : item.mime_type;
+    const isSupported = isSupportedFile(mimeType);
+    return (
+      <FileTypeIcon
+        mimeType={mimeType}
+        className={`h-5 w-5 ${!isSupported ? 'opacity-60' : ''}`}
+      />
+    );
   };
 
   // Format file size
