@@ -20,10 +20,9 @@
     "googleapis": "^144.0.0",
     "marked": "^17.0.1",
     "openai": "^4.77.0",
-    "pdf-parse": "^2.4.5"
+    "unpdf": "^0.12.1"
   },
   "devDependencies": {
-    "@types/pdf-parse": "^1.1.5",
     "typescript": "^5.7.2"
   }
 }

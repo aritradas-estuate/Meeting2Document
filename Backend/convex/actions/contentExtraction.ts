@@ -4,7 +4,7 @@ import { internalAction, ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { google, drive_v3 } from "googleapis";
-import { PDFParse } from "pdf-parse";
+import { extractText } from "unpdf";
 
 // Duplicated from drive.ts lines 77-123 — drive.ts doesn't export this helper
 async function getAuthenticatedDriveClientFromUser(
@@ -165,10 +165,10 @@ export const extractContent = internalAction({
             `[contentExtraction] PDF downloaded, size: ${pdfBuffer.length} bytes`,
           );
 
-          const parser = new PDFParse({ data: pdfBuffer });
-          const pdfData = await parser.getText();
-          await parser.destroy();
-          extractedText = pdfData.text;
+          const { text } = await extractText(new Uint8Array(pdfBuffer), {
+            mergePages: true,
+          });
+          extractedText = text;
 
           // Scanned PDF heuristic: <50 chars extracted from a >100KB file
           if (

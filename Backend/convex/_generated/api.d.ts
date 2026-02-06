@@ -10,6 +10,7 @@
 
 import type * as actions_assembly from "../actions/assembly.js";
 import type * as actions_assets from "../actions/assets.js";
+import type * as actions_contentExtraction from "../actions/contentExtraction.js";
 import type * as actions_drive from "../actions/drive.js";
 import type * as actions_export from "../actions/export.js";
 import type * as actions_extraction from "../actions/extraction.js";
@@ -29,6 +30,7 @@ import type * as lib_prompts from "../lib/prompts.js";
 import type * as lib_sectionSchema from "../lib/sectionSchema.js";
 import type * as lib_templateLoader from "../lib/templateLoader.js";
 import type * as projects from "../projects.js";
+import type * as sourceContent from "../sourceContent.js";
 import type * as transcripts from "../transcripts.js";
 import type * as users from "../users.js";
 
@@ -41,6 +43,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/assembly": typeof actions_assembly;
   "actions/assets": typeof actions_assets;
+  "actions/contentExtraction": typeof actions_contentExtraction;
   "actions/drive": typeof actions_drive;
   "actions/export": typeof actions_export;
   "actions/extraction": typeof actions_extraction;
@@ -60,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sectionSchema": typeof lib_sectionSchema;
   "lib/templateLoader": typeof lib_templateLoader;
   projects: typeof projects;
+  sourceContent: typeof sourceContent;
   transcripts: typeof transcripts;
   users: typeof users;
 }>;
