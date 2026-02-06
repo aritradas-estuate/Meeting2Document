@@ -29,6 +29,11 @@ const getOpenAIClient = () => {
 
 const SYNTHESIS_MODEL = process.env.MODEL_SYNTHESIS || "gpt-5.2";
 
+function getSourceType(source: any): "video" | "document" {
+  if ("sourceContentId" in source) return "document";
+  return "video"; // covers both legacy (no sourceType) and new video shape
+}
+
 interface SourceData {
   fileName: string;
   transcript: string;
@@ -56,6 +61,7 @@ interface SourceData {
     topics_discussed?: Array<{ topic: string; duration_estimate: string }>;
     follow_ups?: Array<{ item: string; owner: string }>;
   };
+  sourceType?: "video" | "document";
 }
 
 interface SectionRecommendation {
@@ -70,6 +76,12 @@ function buildSourceContext(sources: SourceData[]): string {
   let context = "";
 
   for (const source of sources) {
+    if (source.sourceType === "document") {
+      context += `\n\n=== DOCUMENT SOURCE: ${source.fileName} ===\n`;
+      context += `\n--- DOCUMENT CONTENT ---\n${source.transcript.substring(0, 15000)}\n`;
+      continue;
+    }
+
     context += `\n\n=== SOURCE: ${source.fileName} ===\n`;
     context += `\n--- TRANSCRIPT ---\n${source.transcript.substring(0, 15000)}\n`;
 
@@ -158,23 +170,48 @@ export const analyze = internalAction({
       const loadedFiles: string[] = [];
 
       for (const selectedSource of generation.selectedSources) {
-        const transcript = await ctx.runQuery(
-          internal.transcripts.getByIdInternal,
-          {
-            transcriptId: selectedSource.transcriptId,
-          },
-        );
-        const keyIdea = await ctx.runQuery(internal.keyIdeas.getByIdInternal, {
-          keyIdeaId: selectedSource.keyIdeaId,
-        });
+        const type = getSourceType(selectedSource);
 
-        if (transcript && keyIdea) {
-          sources.push({
-            fileName: selectedSource.fileName,
-            transcript: transcript.text || "",
-            keyIdeas: keyIdea.extraction || {},
-          });
-          loadedFiles.push(`${selectedSource.fileName} ✓`);
+        if (type === "video") {
+          const transcript = await ctx.runQuery(
+            internal.transcripts.getByIdInternal,
+            {
+              transcriptId: (selectedSource as any).transcriptId,
+            },
+          );
+          const keyIdea = await ctx.runQuery(
+            internal.keyIdeas.getByIdInternal,
+            {
+              keyIdeaId: (selectedSource as any).keyIdeaId,
+            },
+          );
+
+          if (transcript && keyIdea) {
+            sources.push({
+              fileName: selectedSource.fileName,
+              transcript: transcript.text || "",
+              keyIdeas: keyIdea.extraction || {},
+              sourceType: "video",
+            });
+            loadedFiles.push(`${selectedSource.fileName} ✓`);
+          }
+        } else {
+          const sourceContent = await ctx.runQuery(
+            internal.sourceContent.getByIdInternal,
+            {
+              sourceContentId: (selectedSource as any).sourceContentId,
+            },
+          );
+
+          if (sourceContent && sourceContent.text) {
+            sources.push({
+              fileName: selectedSource.fileName,
+              transcript: sourceContent.text,
+              keyIdeas: {},
+              sourceType: "document",
+            });
+            loadedFiles.push(`${selectedSource.fileName} (doc) ✓`);
+          }
         }
       }
 
