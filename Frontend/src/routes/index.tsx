@@ -22,7 +22,7 @@ function LandingPage() {
   }, [isAuthenticated, isLoading, navigate]);
 
   const handleSignIn = () => {
-    signIn("google");
+    signIn("google", { redirectTo: `${window.location.origin}/dashboard` });
   };
 
   return (

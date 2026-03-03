@@ -1,5 +1,9 @@
 import Google from "@auth/core/providers/google";
 import { convexAuth } from "@convex-dev/auth/server";
+import {
+  resolveRedirect,
+  validateRedirectOrThrow,
+} from "./lib/redirectPolicy";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
@@ -27,6 +31,17 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     }),
   ],
   callbacks: {
+    async redirect({ redirectTo }) {
+      const siteUrl = process.env.SITE_URL;
+      if (!siteUrl) {
+        throw new Error("SITE_URL not configured");
+      }
+
+      const resolvedRedirect = resolveRedirect(redirectTo, siteUrl);
+      validateRedirectOrThrow(resolvedRedirect);
+      return resolvedRedirect.toString();
+    },
+
     async createOrUpdateUser(ctx, { existingUserId, profile }) {
       const googleAccessToken = profile.googleAccessToken as string | undefined;
       const googleRefreshToken = profile.googleRefreshToken as string | undefined;
