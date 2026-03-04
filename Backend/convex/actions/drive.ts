@@ -48,6 +48,23 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
+const DRIVE_ID_PATTERN = /^[A-Za-z0-9_-]{3,200}$/;
+
+function assertValidDriveId(value: string, fieldName: string): void {
+  if (!DRIVE_ID_PATTERN.test(value)) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+}
+
+function sanitizeDriveQueryValue(query: string): string {
+  const normalized = query
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .trim()
+    .slice(0, 200);
+
+  return normalized.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 interface DriveItem {
   id: string;
   name: string;
@@ -164,17 +181,25 @@ export const listFiles = action({
     args,
   ): Promise<{ items: DriveItem[]; nextPageToken: string | null }> => {
     const { drive } = await getAuthenticatedDriveClient(ctx);
+    const queryLiteral = args.query ? sanitizeDriveQueryValue(args.query) : "";
+
+    if (args.folderId) {
+      assertValidDriveId(args.folderId, "folderId");
+    }
+    if (args.driveId) {
+      assertValidDriveId(args.driveId, "driveId");
+    }
 
     const qParts = ["trashed = false"];
 
     if (args.folderId) {
       qParts.push(`'${args.folderId}' in parents`);
-    } else if (!args.query) {
+    } else if (!queryLiteral) {
       qParts.push("'root' in parents");
     }
 
-    if (args.query) {
-      qParts.push(`name contains '${args.query}'`);
+    if (queryLiteral) {
+      qParts.push(`name contains '${queryLiteral}'`);
     }
 
     const fileTypes = [
@@ -260,6 +285,11 @@ export const navigate = action({
     };
     nextPageToken: string | null;
   }> => {
+    assertValidDriveId(args.folderId, "folderId");
+    if (args.driveId) {
+      assertValidDriveId(args.driveId, "driveId");
+    }
+
     const { drive } = await getAuthenticatedDriveClient(ctx);
 
     const folderData = await drive.files.get({
@@ -324,6 +354,11 @@ export const getFile = action({
     driveId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    assertValidDriveId(args.fileId, "fileId");
+    if (args.driveId) {
+      assertValidDriveId(args.driveId, "driveId");
+    }
+
     const { drive } = await getAuthenticatedDriveClient(ctx);
 
     const params: any = {

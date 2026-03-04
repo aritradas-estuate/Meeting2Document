@@ -9,7 +9,6 @@
     "logs": "convex logs"
   },
   "dependencies": {
-    "20": "^3.1.9",
     "@anthropic-ai/sdk": "^0.71.2",
     "@auth/core": "^0.37.4",
     "@convex-dev/auth": "^0.0.80",
@@ -20,8 +19,11 @@
     "googleapis": "^144.0.0",
     "marked": "^17.0.1",
     "openai": "^4.77.0",
-    "unpdf": "^0.12.1",
-    "xlsx": "^0.18.5"
+    "unpdf": "^1.4.0"
+  },
+  "overrides": {
+    "fast-xml-parser": "^4.5.4",
+    "minimatch": "^3.1.4"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

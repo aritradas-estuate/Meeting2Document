@@ -79,7 +79,8 @@ In the Convex dashboard, add these environment variables:
 - `GOOGLE_CLIENT_SECRET`
 - `ASSEMBLYAI_API_KEY`
 - `OPENAI_API_KEY`
-- `WEBHOOK_SECRET`
+- `WEBHOOK_SECRET` (required for webhook processing)
+- `REDIRECT_ALLOWED_ORIGINS` (comma-separated redirect origin allowlist)
 
 ## Project Structure
 

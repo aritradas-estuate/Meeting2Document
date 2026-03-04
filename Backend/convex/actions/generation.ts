@@ -2,8 +2,10 @@
 
 import { internalAction, action } from "../_generated/server";
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { v } from "convex/values";
 import Anthropic from "@anthropic-ai/sdk";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { getSectionById } from "../lib/templateLoader";
 import {
   buildSectionWriterPrompt,
@@ -35,6 +37,23 @@ const MAX_ITERATIONS = parseInt(process.env.MAX_REVIEW_ITERATIONS || "3", 10);
 const MAX_RETRIES = 5;
 const INITIAL_RETRY_DELAY_MS = 3000;
 const RETRYABLE_STATUS_CODES = [429, 529, 500, 502, 503, 504];
+
+async function verifyGenerationOwnership(ctx: any, generationId: any) {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) throw new Error("Unauthorized");
+
+  const generation = await ctx.runQuery(
+    internal.documentGenerations.getByIdInternal,
+    { generationId },
+  );
+  if (!generation) throw new Error("Generation not found");
+
+  const project = await ctx.runQuery(internal.projects.getByIdInternal, {
+    projectId: generation.projectId,
+  });
+  if (!project) throw new Error("Project not found");
+  if (project.userId !== userId) throw new Error("Unauthorized");
+}
 
 async function withRetry<T>(
   operation: () => Promise<T>,
@@ -90,6 +109,37 @@ interface GenerationHistoryEntry {
   reviewerFeedback?: string;
   approved: boolean;
 }
+
+type SelectedSourceLike = {
+  fileName: string;
+  transcriptId: Id<"transcripts">;
+  keyIdeaId: Id<"keyIdeas">;
+};
+
+type GenerationLike = {
+  projectId: Id<"projects">;
+  selectedSectionIds?: string[];
+  selectedSources: SelectedSourceLike[];
+  documentId?: Id<"documents">;
+};
+
+type ProjectLike = {
+  name: string;
+  userId: string;
+};
+
+type DocumentWithSectionsLike = {
+  sections: Array<{ status: string }>;
+};
+
+type StartGenerationResult = {
+  documentId: Id<"documents">;
+  sectionsStarted: number;
+};
+
+type CheckGenerationResult = {
+  complete: boolean;
+};
 
 function buildSourceContext(sources: SourceData[]): string {
   let context = "";
@@ -277,6 +327,13 @@ export const generateSection = internalAction({
 
     const sources: SourceData[] = [];
     for (const selectedSource of generation.selectedSources) {
+      if (
+        !("transcriptId" in selectedSource) ||
+        !("keyIdeaId" in selectedSource)
+      ) {
+        continue;
+      }
+
       const transcript = await ctx.runQuery(
         internal.transcripts.getByIdInternal,
         {
@@ -448,154 +505,163 @@ export const generateSection = internalAction({
   },
 });
 
+const startGenerationHandler = async (
+  ctx: any,
+  args: { generationId: Id<"documentGenerations"> },
+): Promise<StartGenerationResult> => {
+  await verifyGenerationOwnership(ctx, args.generationId);
+
+  const startTime = Date.now();
+
+  const generation: GenerationLike | null = await ctx.runQuery(
+    internal.documentGenerations.getByIdInternal,
+    {
+      generationId: args.generationId,
+    },
+  );
+  if (!generation) throw new Error("Generation not found");
+  if (
+    !generation.selectedSectionIds ||
+    generation.selectedSectionIds.length === 0
+  ) {
+    throw new Error("No sections selected for generation");
+  }
+
+  logPipelineStart("DOCUMENT GENERATION", args.generationId, {
+    "Sections to Generate": generation.selectedSectionIds.length,
+    "Source Files": generation.selectedSources.length,
+  });
+
+  const project: ProjectLike | null = await ctx.runQuery(
+    internal.projects.getByIdInternal,
+    {
+      projectId: generation.projectId,
+    },
+  );
+  if (!project) throw new Error("Project not found");
+
+  logStep(1, 3, "Creating document...");
+  const documentId: Id<"documents"> = await ctx.runMutation(
+    internal.documents.createInternal,
+    {
+      projectId: generation.projectId,
+      title: `${project.name} - Solution Design Document`,
+      schemaType: "zuora_sdd",
+    },
+  );
+  logStep(1, 3, `Document created: ${documentId}`, "success");
+
+  await ctx.runMutation(internal.documentGenerations.linkDocumentInternal, {
+    generationId: args.generationId,
+    documentId,
+  });
+
+  logStep(2, 3, "Creating section placeholders...");
+  const sectionPromises: Promise<unknown>[] = [];
+  const sectionNames: string[] = [];
+
+  for (const sectionId of generation.selectedSectionIds) {
+    const sectionDef = getSectionById(sectionId);
+    if (!sectionDef) continue;
+
+    sectionNames.push(sectionDef.title);
+
+    const documentSectionId = await ctx.runMutation(
+      internal.documents.createSectionInternal,
+      {
+        documentId,
+        sectionId,
+        sectionTitle: sectionDef.title,
+        sourceFileNames: generation.selectedSources.map((s) => s.fileName),
+      },
+    );
+
+    sectionPromises.push(
+      ctx.scheduler.runAfter(0, internal.actions.generation.generateSection, {
+        documentSectionId,
+        generationId: args.generationId,
+        sectionId,
+      }),
+    );
+  }
+
+  logStep(2, 3, `Created ${sectionNames.length} sections`, "success");
+  logDetail("Sections", sectionNames.join(", "));
+
+  logStep(3, 3, "Scheduling section generation tasks...");
+  await Promise.all(sectionPromises);
+  logStep(
+    3,
+    3,
+    `Scheduled ${sectionPromises.length} parallel generation tasks`,
+    "success",
+  );
+
+  logPipelineEnd(
+    "DOCUMENT GENERATION",
+    args.generationId,
+    true,
+    Date.now() - startTime,
+    {
+      "Document ID": documentId,
+      "Sections Started": sectionPromises.length,
+    },
+  );
+
+  return {
+    documentId,
+    sectionsStarted: generation.selectedSectionIds.length,
+  };
+};
+
 export const startGeneration = action({
   args: {
     generationId: v.id("documentGenerations"),
   },
-  handler: async (ctx, args) => {
-    const startTime = Date.now();
-
-    const generation = await ctx.runQuery(
-      internal.documentGenerations.getByIdInternal,
-      {
-        generationId: args.generationId,
-      },
-    );
-    if (!generation) throw new Error("Generation not found");
-    if (
-      !generation.selectedSectionIds ||
-      generation.selectedSectionIds.length === 0
-    ) {
-      throw new Error("No sections selected for generation");
-    }
-
-    logPipelineStart("DOCUMENT GENERATION", args.generationId, {
-      "Sections to Generate": generation.selectedSectionIds.length,
-      "Source Files": generation.selectedSources.length,
-    });
-
-    const project = await ctx.runQuery(internal.projects.getByIdInternal, {
-      projectId: generation.projectId,
-    });
-    if (!project) throw new Error("Project not found");
-
-    logStep(1, 3, "Creating document...");
-    const documentId = await ctx.runMutation(
-      internal.documents.createInternal,
-      {
-        projectId: generation.projectId,
-        title: `${project.name} - Solution Design Document`,
-        schemaType: "zuora_sdd",
-      },
-    );
-    logStep(1, 3, `Document created: ${documentId}`, "success");
-
-    await ctx.runMutation(internal.documentGenerations.linkDocumentInternal, {
-      generationId: args.generationId,
-      documentId,
-    });
-
-    logStep(2, 3, "Creating section placeholders...");
-    const sectionPromises = [];
-    const sectionNames: string[] = [];
-
-    for (const sectionId of generation.selectedSectionIds) {
-      const sectionDef = getSectionById(sectionId);
-      if (!sectionDef) continue;
-
-      sectionNames.push(sectionDef.title);
-
-      const documentSectionId = await ctx.runMutation(
-        internal.documents.createSectionInternal,
-        {
-          documentId,
-          sectionId,
-          sectionTitle: sectionDef.title,
-          sourceFileNames: generation.selectedSources.map(
-            (s: { fileName: string }) => s.fileName,
-          ),
-        },
-      );
-
-      sectionPromises.push(
-        ctx.scheduler.runAfter(0, internal.actions.generation.generateSection, {
-          documentSectionId,
-          generationId: args.generationId,
-          sectionId,
-        }),
-      );
-    }
-
-    logStep(2, 3, `Created ${sectionNames.length} sections`, "success");
-    logDetail("Sections", sectionNames.join(", "));
-
-    logStep(3, 3, "Scheduling section generation tasks...");
-    await Promise.all(sectionPromises);
-    logStep(
-      3,
-      3,
-      `Scheduled ${sectionPromises.length} parallel generation tasks`,
-      "success",
-    );
-
-    logPipelineEnd(
-      "DOCUMENT GENERATION",
-      args.generationId,
-      true,
-      Date.now() - startTime,
-      {
-        "Document ID": documentId,
-        "Sections Started": sectionPromises.length,
-      },
-    );
-
-    return {
-      documentId,
-      sectionsStarted: generation.selectedSectionIds.length,
-    };
-  },
+  handler: startGenerationHandler,
 });
+
+const checkGenerationCompleteHandler = async (
+  ctx: any,
+  args: { generationId: Id<"documentGenerations"> },
+): Promise<CheckGenerationResult> => {
+  const generation: GenerationLike | null = await ctx.runQuery(
+    internal.documentGenerations.getByIdInternal,
+    {
+      generationId: args.generationId,
+    },
+  );
+  if (!generation || !generation.documentId) return { complete: false };
+
+  const document: DocumentWithSectionsLike | null = await ctx.runQuery(
+    internal.documents.getWithSectionsInternal,
+    {
+      documentId: generation.documentId,
+    },
+  );
+  if (!document) return { complete: false };
+
+  const allComplete: boolean = document.sections.every(
+    (s) => s.status === "complete" || s.status === "skipped",
+  );
+
+  if (allComplete) {
+    await ctx.runMutation(internal.documentGenerations.updateStatusInternal, {
+      generationId: args.generationId,
+      status: "completed",
+    });
+
+    await ctx.scheduler.runAfter(0, internal.actions.assembly.assembleDocument, {
+      documentId: generation.documentId,
+    });
+  }
+
+  return { complete: allComplete };
+};
 
 export const checkGenerationComplete = internalAction({
   args: {
     generationId: v.id("documentGenerations"),
   },
-  handler: async (ctx, args) => {
-    const generation = await ctx.runQuery(
-      internal.documentGenerations.getByIdInternal,
-      {
-        generationId: args.generationId,
-      },
-    );
-    if (!generation || !generation.documentId) return { complete: false };
-
-    const document = await ctx.runQuery(
-      internal.documents.getWithSectionsInternal,
-      {
-        documentId: generation.documentId,
-      },
-    );
-    if (!document) return { complete: false };
-
-    const allComplete = document.sections.every(
-      (s: any) => s.status === "complete" || s.status === "skipped",
-    );
-
-    if (allComplete) {
-      await ctx.runMutation(internal.documentGenerations.updateStatusInternal, {
-        generationId: args.generationId,
-        status: "completed",
-      });
-
-      await ctx.scheduler.runAfter(
-        0,
-        internal.actions.assembly.assembleDocument,
-        {
-          documentId: generation.documentId,
-        },
-      );
-    }
-
-    return { complete: allComplete };
-  },
+  handler: checkGenerationCompleteHandler,
 });

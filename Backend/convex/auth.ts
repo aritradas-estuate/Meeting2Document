@@ -38,7 +38,11 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       }
 
       const resolvedRedirect = resolveRedirect(redirectTo, siteUrl);
-      validateRedirectOrThrow(resolvedRedirect);
+      validateRedirectOrThrow(resolvedRedirect, {
+        siteUrl,
+        allowedOriginsCsv: process.env.REDIRECT_ALLOWED_ORIGINS,
+        nodeEnv: process.env.NODE_ENV,
+      });
       return resolvedRedirect.toString();
     },
 

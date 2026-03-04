@@ -4,6 +4,7 @@ import { internalAction, action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import OpenAI from "openai";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   SECTION_SCHEMA,
   getAllSections,
@@ -28,6 +29,23 @@ const getOpenAIClient = () => {
 };
 
 const SYNTHESIS_MODEL = process.env.MODEL_SYNTHESIS || "gpt-5.2";
+
+async function verifyGenerationOwnership(ctx: any, generationId: any) {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) throw new Error("Unauthorized");
+
+  const generation = await ctx.runQuery(
+    internal.documentGenerations.getByIdInternal,
+    { generationId },
+  );
+  if (!generation) throw new Error("Generation not found");
+
+  const project = await ctx.runQuery(internal.projects.getByIdInternal, {
+    projectId: generation.projectId,
+  });
+  if (!project) throw new Error("Project not found");
+  if (project.userId !== userId) throw new Error("Unauthorized");
+}
 
 function getSourceType(source: any): "video" | "document" {
   if ("sourceContentId" in source) return "document";
@@ -413,6 +431,8 @@ export const startSynthesis = action({
     generationId: v.id("documentGenerations"),
   },
   handler: async (ctx, args) => {
+    await verifyGenerationOwnership(ctx, args.generationId);
+
     await ctx.scheduler.runAfter(0, internal.actions.synthesis.analyze, {
       generationId: args.generationId,
     });

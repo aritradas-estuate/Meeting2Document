@@ -12,12 +12,14 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const webhookSecret = process.env.WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error("WEBHOOK_SECRET is not configured");
+      return new Response("Webhook not configured", { status: 500 });
+    }
 
-    if (webhookSecret) {
-      const providedSecret = request.headers.get("X-Webhook-Secret");
-      if (providedSecret !== webhookSecret) {
-        return new Response("Unauthorized", { status: 401 });
-      }
+    const providedSecret = request.headers.get("X-Webhook-Secret");
+    if (providedSecret !== webhookSecret) {
+      return new Response("Unauthorized", { status: 401 });
     }
 
     let body: any;

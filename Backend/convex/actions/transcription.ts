@@ -601,14 +601,44 @@ export const handleWebhook = internalAction({
       return;
     }
 
+    if (transcript.status === "completed" || transcript.status === "failed") {
+      console.log(
+        `Ignoring webhook for terminal transcript ${transcript._id}: current=${transcript.status}, incoming=${args.status}`,
+      );
+      return;
+    }
+
+    if (args.status !== "completed" && args.status !== "error") {
+      console.log(
+        `Ignoring unsupported webhook status for transcript ${transcript._id}: ${args.status}`,
+      );
+      return;
+    }
+
+    // Re-fetch right before processing so concurrent callbacks use latest state.
+    const latestTranscript = await ctx.runQuery(internal.transcripts.getByIdInternal, {
+      transcriptId: transcript._id,
+    });
+    if (!latestTranscript) return;
+
+    if (
+      latestTranscript.status === "completed" ||
+      latestTranscript.status === "failed"
+    ) {
+      console.log(
+        `Ignoring duplicate webhook after terminal transition for transcript ${latestTranscript._id}`,
+      );
+      return;
+    }
+
     if (args.status === "completed") {
       const client = getClient();
       const fullTranscript = await client.transcripts.get(args.transcriptId);
-      await handleTranscriptCompleted(ctx, transcript, fullTranscript);
+      await handleTranscriptCompleted(ctx, latestTranscript, fullTranscript);
     } else if (args.status === "error") {
       await handleTranscriptError(
         ctx,
-        transcript,
+        latestTranscript,
         args.error || "Unknown error",
       );
     }
@@ -620,24 +650,29 @@ async function cleanupTranscriptResources(
   transcript: any,
   userId: any,
 ) {
-  console.log(`Cleaning up resources for ${transcript.fileName}...`);
+  const latestTranscript =
+    (await ctx.runQuery(internal.transcripts.getByIdInternal, {
+      transcriptId: transcript._id,
+    })) ?? transcript;
 
-  if (transcript.gcsFileName) {
+  console.log(`Cleaning up resources for ${latestTranscript.fileName}...`);
+
+  if (latestTranscript.gcsFileName) {
     try {
-      console.log(`  - Deleting GCS file: ${transcript.gcsFileName}`);
+      console.log(`  - Deleting GCS file: ${latestTranscript.gcsFileName}`);
       await ctx.runAction(internal.actions.gcs.deleteFile, {
-        gcsFileName: transcript.gcsFileName,
+        gcsFileName: latestTranscript.gcsFileName,
       });
     } catch (e: any) {
       console.error(`  - Failed to cleanup GCS file:`, e.message);
     }
   }
 
-  if (transcript.publicUrl) {
+  if (latestTranscript.publicUrl) {
     try {
       console.log(`  - Revoking public access for Drive file`);
       await ctx.runAction(internal.actions.drive.revokeFilePublicAccess, {
-        fileId: transcript.fileId,
+        fileId: latestTranscript.fileId,
         userId,
       });
     } catch (e: any) {
@@ -645,7 +680,7 @@ async function cleanupTranscriptResources(
     }
   }
 
-  console.log(`Cleanup complete for ${transcript.fileName}`);
+  console.log(`Cleanup complete for ${latestTranscript.fileName}`);
 }
 
 async function handleTranscriptCompleted(

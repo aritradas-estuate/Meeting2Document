@@ -5,7 +5,6 @@ import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { google, drive_v3 } from "googleapis";
 import { extractText } from "unpdf";
-import * as XLSX from "xlsx";
 
 // Duplicated from drive.ts lines 77-123 — drive.ts doesn't export this helper
 async function getAuthenticatedDriveClientFromUser(
@@ -105,36 +104,6 @@ async function deleteTemporaryFileBestEffort(
       `[contentExtraction] Failed to delete temporary file ${fileId}: ${error?.message ?? error}`,
     );
   }
-}
-
-function serializeWorkbookToText(xlsxBuffer: Buffer): string {
-  const workbook = XLSX.read(xlsxBuffer, {
-    type: "buffer",
-    cellDates: true,
-    cellText: true,
-  });
-
-  const sheetNames = workbook.SheetNames;
-  if (!sheetNames.length) {
-    return "[Warning: Workbook has no worksheets]";
-  }
-
-  const sheetsAsText = sheetNames.map((sheetName, index) => {
-    const worksheet = workbook.Sheets[sheetName];
-    if (!worksheet) {
-      return `=== SHEET ${index + 1}: ${sheetName} ===\n[Warning: Unable to read sheet data]`;
-    }
-
-    const csv = XLSX.utils.sheet_to_csv(worksheet, {
-      blankrows: false,
-    }).trim();
-
-    return `=== SHEET ${index + 1}: ${sheetName} ===\n${
-      csv.length ? csv : "[No tabular data found]"
-    }`;
-  });
-
-  return `Workbook contains ${sheetNames.length} worksheet(s).\n\n${sheetsAsText.join("\n\n")}`;
 }
 
 export const extractContent = internalAction({
@@ -285,19 +254,18 @@ export const extractContent = internalAction({
           );
 
           console.log(
-            `[contentExtraction] Exporting converted spreadsheet as .xlsx for all-sheet parsing`,
+            `[contentExtraction] Exporting converted spreadsheet as text/csv`,
           );
           const response = await authenticatedDrive.files.export(
             {
               fileId: temporaryFileId,
-              mimeType: OFFICE_EXCEL_OPENXML_MIME,
+              mimeType: "text/csv",
               supportsAllDrives: true,
             } as any,
-            { responseType: "arraybuffer" },
           );
-
-          const xlsxBuffer = Buffer.from(response.data as ArrayBuffer);
-          extractedText = serializeWorkbookToText(xlsxBuffer);
+          extractedText =
+            "Note: Only the first sheet was exported.\n\n" +
+            String(response.data);
           break;
         }
 

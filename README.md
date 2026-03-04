@@ -71,6 +71,8 @@ Add these environment variables in the Convex dashboard:
 - `GOOGLE_CLIENT_SECRET`
 - `ASSEMBLYAI_API_KEY`
 - `OPENAI_API_KEY`
+- `WEBHOOK_SECRET` (required for webhook processing)
+- `REDIRECT_ALLOWED_ORIGINS` (comma-separated redirect origin allowlist)
 
 ### 4. Set Up Frontend
 
@@ -170,7 +172,7 @@ bun add <package-name>
 ## Troubleshooting
 
 ### "Invalid redirect URI" error
-Check your Google Cloud Console OAuth settings match your Convex auth configuration.
+Check your Google Cloud Console OAuth settings match your Convex auth configuration, and ensure `REDIRECT_ALLOWED_ORIGINS` includes every approved app origin.
 
 ### Convex connection issues
 Make sure `VITE_CONVEX_URL` in Frontend/.env matches your Convex deployment URL.
