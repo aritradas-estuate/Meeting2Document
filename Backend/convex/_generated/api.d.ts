@@ -27,6 +27,7 @@ import type * as keyIdeas from "../keyIdeas.js";
 import type * as lib_logger from "../lib/logger.js";
 import type * as lib_promptBuilder from "../lib/promptBuilder.js";
 import type * as lib_prompts from "../lib/prompts.js";
+import type * as lib_redirectPolicy from "../lib/redirectPolicy.js";
 import type * as lib_sectionSchema from "../lib/sectionSchema.js";
 import type * as lib_templateLoader from "../lib/templateLoader.js";
 import type * as projects from "../projects.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   "lib/logger": typeof lib_logger;
   "lib/promptBuilder": typeof lib_promptBuilder;
   "lib/prompts": typeof lib_prompts;
+  "lib/redirectPolicy": typeof lib_redirectPolicy;
   "lib/sectionSchema": typeof lib_sectionSchema;
   "lib/templateLoader": typeof lib_templateLoader;
   projects: typeof projects;
