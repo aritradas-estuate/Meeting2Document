@@ -5,6 +5,7 @@ import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { google, drive_v3 } from "googleapis";
 import { extractText } from "unpdf";
+import * as XLSX from "xlsx";
 
 // Duplicated from drive.ts lines 77-123 — drive.ts doesn't export this helper
 async function getAuthenticatedDriveClientFromUser(
@@ -52,6 +53,90 @@ async function getAuthenticatedDriveClientFromUser(
   return google.drive({ version: "v3", auth: oauth2Client });
 }
 
+const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
+const GOOGLE_PRESENTATION_MIME = "application/vnd.google-apps.presentation";
+const GOOGLE_SPREADSHEET_MIME = "application/vnd.google-apps.spreadsheet";
+const OFFICE_WORD_MIME = "application/msword";
+const OFFICE_WORD_OPENXML_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const OFFICE_POWERPOINT_MIME = "application/vnd.ms-powerpoint";
+const OFFICE_POWERPOINT_OPENXML_MIME =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const OFFICE_EXCEL_MIME = "application/vnd.ms-excel";
+const OFFICE_EXCEL_OPENXML_MIME =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+async function createTemporaryConvertedCopy(
+  drive: drive_v3.Drive,
+  fileId: string,
+  sourceFileName: string,
+  targetMimeType: string,
+): Promise<string> {
+  const baseName = sourceFileName.replace(/\.[^/.]+$/, "");
+  const copyResponse = await drive.files.copy({
+    fileId,
+    requestBody: {
+      name: `[temp-extract] ${baseName} (${Date.now()})`,
+      mimeType: targetMimeType,
+    },
+    fields: "id",
+    supportsAllDrives: true,
+  } as any);
+
+  const copiedFileId = copyResponse.data.id;
+  if (!copiedFileId) {
+    throw new Error("Failed to create temporary converted Drive file");
+  }
+
+  return copiedFileId;
+}
+
+async function deleteTemporaryFileBestEffort(
+  drive: drive_v3.Drive,
+  fileId: string,
+) {
+  try {
+    await drive.files.delete({
+      fileId,
+      supportsAllDrives: true,
+    } as any);
+  } catch (error: any) {
+    console.warn(
+      `[contentExtraction] Failed to delete temporary file ${fileId}: ${error?.message ?? error}`,
+    );
+  }
+}
+
+function serializeWorkbookToText(xlsxBuffer: Buffer): string {
+  const workbook = XLSX.read(xlsxBuffer, {
+    type: "buffer",
+    cellDates: true,
+    cellText: true,
+  });
+
+  const sheetNames = workbook.SheetNames;
+  if (!sheetNames.length) {
+    return "[Warning: Workbook has no worksheets]";
+  }
+
+  const sheetsAsText = sheetNames.map((sheetName, index) => {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) {
+      return `=== SHEET ${index + 1}: ${sheetName} ===\n[Warning: Unable to read sheet data]`;
+    }
+
+    const csv = XLSX.utils.sheet_to_csv(worksheet, {
+      blankrows: false,
+    }).trim();
+
+    return `=== SHEET ${index + 1}: ${sheetName} ===\n${
+      csv.length ? csv : "[No tabular data found]"
+    }`;
+  });
+
+  return `Workbook contains ${sheetNames.length} worksheet(s).\n\n${sheetsAsText.join("\n\n")}`;
+}
+
 export const extractContent = internalAction({
   args: {
     sourceContentId: v.id("sourceContent"),
@@ -76,6 +161,9 @@ export const extractContent = internalAction({
       status: "extracting",
     });
 
+    let drive: drive_v3.Drive | null = null;
+    let temporaryFileId: string | null = null;
+
     try {
       const MAX_FILE_SIZE = 20 * 1024 * 1024;
       if (sourceContent.fileSize && sourceContent.fileSize > MAX_FILE_SIZE) {
@@ -93,22 +181,40 @@ export const extractContent = internalAction({
       );
       if (!project) throw new Error("Associated project not found");
 
-      const drive = await getAuthenticatedDriveClientFromUser(
+      const authenticatedDrive = await getAuthenticatedDriveClientFromUser(
         ctx,
         project.userId,
       );
+      drive = authenticatedDrive;
 
       let extractedText: string;
       const fileId = sourceContent.fileId;
 
       switch (sourceContent.mimeType) {
-        case "application/vnd.google-apps.document": {
-          console.log(
-            `[contentExtraction] Exporting Google Doc as text/plain`,
-          );
-          const response = await drive.files.export(
-            {
+        case GOOGLE_DOC_MIME:
+        case OFFICE_WORD_MIME:
+        case OFFICE_WORD_OPENXML_MIME: {
+          if (
+            sourceContent.mimeType === OFFICE_WORD_MIME ||
+            sourceContent.mimeType === OFFICE_WORD_OPENXML_MIME
+          ) {
+            console.log(
+              `[contentExtraction] Converting Microsoft Word to Google Doc for extraction`,
+            );
+            temporaryFileId = await createTemporaryConvertedCopy(
+              authenticatedDrive,
               fileId,
+              sourceContent.fileName,
+              GOOGLE_DOC_MIME,
+            );
+          }
+
+          console.log(
+            `[contentExtraction] Exporting document as text/plain`,
+          );
+          const response = await authenticatedDrive.files.export(
+            {
+              fileId: temporaryFileId ?? fileId,
               mimeType: "text/plain",
               supportsAllDrives: true,
             } as any,
@@ -117,13 +223,30 @@ export const extractContent = internalAction({
           break;
         }
 
-        case "application/vnd.google-apps.presentation": {
-          console.log(
-            `[contentExtraction] Exporting Google Slides as text/plain`,
-          );
-          const response = await drive.files.export(
-            {
+        case GOOGLE_PRESENTATION_MIME:
+        case OFFICE_POWERPOINT_MIME:
+        case OFFICE_POWERPOINT_OPENXML_MIME: {
+          if (
+            sourceContent.mimeType === OFFICE_POWERPOINT_MIME ||
+            sourceContent.mimeType === OFFICE_POWERPOINT_OPENXML_MIME
+          ) {
+            console.log(
+              `[contentExtraction] Converting Microsoft PowerPoint to Google Slides for extraction`,
+            );
+            temporaryFileId = await createTemporaryConvertedCopy(
+              authenticatedDrive,
               fileId,
+              sourceContent.fileName,
+              GOOGLE_PRESENTATION_MIME,
+            );
+          }
+
+          console.log(
+            `[contentExtraction] Exporting presentation as text/plain`,
+          );
+          const response = await authenticatedDrive.files.export(
+            {
+              fileId: temporaryFileId ?? fileId,
               mimeType: "text/plain",
               supportsAllDrives: true,
             } as any,
@@ -132,11 +255,11 @@ export const extractContent = internalAction({
           break;
         }
 
-        case "application/vnd.google-apps.spreadsheet": {
+        case GOOGLE_SPREADSHEET_MIME: {
           console.log(
             `[contentExtraction] Exporting Google Sheets as text/csv`,
           );
-          const response = await drive.files.export(
+          const response = await authenticatedDrive.files.export(
             {
               fileId,
               mimeType: "text/csv",
@@ -149,9 +272,38 @@ export const extractContent = internalAction({
           break;
         }
 
+        case OFFICE_EXCEL_MIME:
+        case OFFICE_EXCEL_OPENXML_MIME: {
+          console.log(
+            `[contentExtraction] Converting Microsoft Excel to Google Sheets for extraction`,
+          );
+          temporaryFileId = await createTemporaryConvertedCopy(
+            authenticatedDrive,
+            fileId,
+            sourceContent.fileName,
+            GOOGLE_SPREADSHEET_MIME,
+          );
+
+          console.log(
+            `[contentExtraction] Exporting converted spreadsheet as .xlsx for all-sheet parsing`,
+          );
+          const response = await authenticatedDrive.files.export(
+            {
+              fileId: temporaryFileId,
+              mimeType: OFFICE_EXCEL_OPENXML_MIME,
+              supportsAllDrives: true,
+            } as any,
+            { responseType: "arraybuffer" },
+          );
+
+          const xlsxBuffer = Buffer.from(response.data as ArrayBuffer);
+          extractedText = serializeWorkbookToText(xlsxBuffer);
+          break;
+        }
+
         case "application/pdf": {
           console.log(`[contentExtraction] Downloading PDF for text extraction`);
-          const response = await drive.files.get(
+          const response = await authenticatedDrive.files.get(
             {
               fileId,
               alt: "media",
@@ -240,6 +392,10 @@ export const extractContent = internalAction({
       await ctx.runMutation(internal.jobs.checkCompletion, {
         jobId: sourceContent.jobId,
       });
+    } finally {
+      if (drive && temporaryFileId) {
+        await deleteTemporaryFileBestEffort(drive, temporaryFileId);
+      }
     }
   },
 });

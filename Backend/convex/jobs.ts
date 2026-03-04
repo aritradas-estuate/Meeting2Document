@@ -36,13 +36,33 @@ async function verifyProjectAccess(ctx: any, projectId: Id<"projects">) {
 function getMimeSourceType(
   mimeType: string,
 ): "google_doc" | "google_slides" | "google_sheets" | "pdf" {
+  const documentMimes = new Set([
+    "application/vnd.google-apps.document",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]);
+  const presentationMimes = new Set([
+    "application/vnd.google-apps.presentation",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ]);
+  const spreadsheetMimes = new Set([
+    "application/vnd.google-apps.spreadsheet",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ]);
+
+  if (documentMimes.has(mimeType)) {
+    return "google_doc";
+  }
+  if (presentationMimes.has(mimeType)) {
+    return "google_slides";
+  }
+  if (spreadsheetMimes.has(mimeType)) {
+    return "google_sheets";
+  }
+
   switch (mimeType) {
-    case "application/vnd.google-apps.document":
-      return "google_doc";
-    case "application/vnd.google-apps.presentation":
-      return "google_slides";
-    case "application/vnd.google-apps.spreadsheet":
-      return "google_sheets";
     case "application/pdf":
       return "pdf";
     default:

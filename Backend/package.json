@@ -20,7 +20,8 @@
     "googleapis": "^144.0.0",
     "marked": "^17.0.1",
     "openai": "^4.77.0",
-    "unpdf": "^0.12.1"
+    "unpdf": "^0.12.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

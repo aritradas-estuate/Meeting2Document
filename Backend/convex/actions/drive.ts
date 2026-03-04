@@ -182,8 +182,14 @@ export const listFiles = action({
       "mimeType contains 'video/'",
       "mimeType = 'application/pdf'",
       "mimeType = 'application/vnd.google-apps.document'",
-      "mimeType contains 'spreadsheet'",
-      "mimeType contains 'presentation'",
+      "mimeType = 'application/vnd.google-apps.presentation'",
+      "mimeType = 'application/vnd.google-apps.spreadsheet'",
+      "mimeType = 'application/msword'",
+      "mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
+      "mimeType = 'application/vnd.ms-powerpoint'",
+      "mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'",
+      "mimeType = 'application/vnd.ms-excel'",
+      "mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
     ];
     qParts.push(`(${fileTypes.join(" or ")})`);
 
