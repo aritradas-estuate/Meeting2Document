@@ -21,6 +21,8 @@ export interface DriveItem {
   thumbnail_link: string | null;
   parents: string[] | null;
   is_folder: boolean;
+  source?: "my_drive" | "shared_drive";
+  driveId?: string;
 }
 
 export interface SharedDrive {

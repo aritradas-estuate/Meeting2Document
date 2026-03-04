@@ -46,7 +46,12 @@ function NewProject() {
         name: name.trim(),
         description: description.trim() || undefined,
         driveFolders: selectedFolders.length > 0 
-          ? selectedFolders.map(f => ({ id: f.id, name: f.name }))
+          ? selectedFolders.map((f) => ({
+              id: f.id,
+              name: f.name,
+              source: f.source,
+              driveId: f.driveId,
+            }))
           : undefined,
       });
       
@@ -166,6 +171,7 @@ function NewProject() {
                   selectedIds={selectedFolders.map(f => f.id)}
                   showOnlyFolders={false}
                   selectFoldersOnly={true}
+                  locationMode="my_and_shared"
                 />
               </CardContent>
             </Card>

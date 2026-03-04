@@ -5,6 +5,8 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 const driveFolderValidator = v.object({
   id: v.string(),
   name: v.string(),
+  source: v.optional(v.union(v.literal("my_drive"), v.literal("shared_drive"))),
+  driveId: v.optional(v.string()),
 });
 
 async function getCurrentUserId(ctx: any) {

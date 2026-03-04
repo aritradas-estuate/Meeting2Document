@@ -566,10 +566,10 @@ function ProjectDetail() {
   }
 
   const loadFolderFiles = useCallback(
-    async (folderId: string) => {
+    async (folderId: string, driveId?: string) => {
       setLoadingFolders((prev) => new Set(prev).add(folderId))
       try {
-        const response = await navigateDrive({ folderId })
+        const response = await navigateDrive({ folderId, driveId })
         const transformedItems: DriveItem[] = response.items.map((item) => ({
           id: item.id,
           name: item.name,
@@ -604,7 +604,8 @@ function ProjectDetail() {
     } else {
       newExpanded.add(folderId)
       if (!folderFiles[folderId]) {
-        loadFolderFiles(folderId)
+        const folder = project?.driveFolders?.find((f) => f.id === folderId)
+        loadFolderFiles(folderId, folder?.driveId)
       }
     }
     setExpandedFolders(newExpanded)
@@ -646,7 +647,12 @@ function ProjectDetail() {
     }
     const newFolders = [
       ...existingFolders,
-      { id: folder.id, name: folder.name },
+      {
+        id: folder.id,
+        name: folder.name,
+        source: folder.source,
+        driveId: folder.driveId,
+      },
     ]
     try {
       await updateProject({
@@ -1017,6 +1023,7 @@ function ProjectDetail() {
                     onSelectCurrentFolder={handleAddFolder}
                     showOnlyFolders={false}
                     selectFoldersOnly={true}
+                    locationMode="my_and_shared"
                   />
                 </div>
               )}

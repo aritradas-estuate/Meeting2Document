@@ -13,6 +13,8 @@ const driveFileValidator = v.object({
 const driveFolderValidator = v.object({
   id: v.string(),
   name: v.string(),
+  source: v.optional(v.union(v.literal("my_drive"), v.literal("shared_drive"))),
+  driveId: v.optional(v.string()),
 });
 
 const jobStatusValidator = v.union(

@@ -9,7 +9,6 @@ import type {
 } from "@/types/api";
 import { FileTypeIcon, isSupportedFile } from "@/lib/fileTypes";
 import {
-  Folder,
   HardDrives,
   CaretRight,
   House,
@@ -27,11 +26,19 @@ interface DriveBrowserProps {
   selectedIds?: string[];
   showOnlyFolders?: boolean;
   selectFoldersOnly?: boolean;
+  locationMode?: "shared_only" | "my_and_shared";
 }
 
 type ViewState =
   | { type: "drives" }
-  | { type: "folder"; folderId: string; driveId?: string };
+  | {
+      type: "folder";
+      folderId: string;
+      source: "my_drive" | "shared_drive";
+      driveId?: string;
+      rootId: string;
+      rootName: string;
+    };
 
 export function DriveBrowser({
   onSelect,
@@ -39,36 +46,52 @@ export function DriveBrowser({
   selectedIds = [],
   showOnlyFolders = false,
   selectFoldersOnly = false,
+  locationMode = "shared_only",
 }: DriveBrowserProps) {
   const listSharedDrivesAction = useAction(api.actions.drive.listSharedDrives);
   const navigateAction = useAction(api.actions.drive.navigate);
-  
+
   const [viewState, setViewState] = useState<ViewState>({ type: "drives" });
   const [sharedDrives, setSharedDrives] = useState<SharedDrive[]>([]);
   const [items, setItems] = useState<DriveItem[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<DriveBreadcrumb[]>([]);
-  const [currentDriveId, setCurrentDriveId] = useState<string | undefined>();
-  const [currentDriveName, setCurrentDriveName] = useState<string>("");
   const [currentFolder, setCurrentFolder] = useState<DriveItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sharedDrivesError, setSharedDrivesError] = useState<string | null>(
+    null,
+  );
 
   const loadSharedDrives = useCallback(async () => {
     setIsLoading(true);
-    setError(null);
+    setSharedDrivesError(null);
+    if (locationMode === "shared_only") {
+      setError(null);
+    }
     try {
       const response = await listSharedDrivesAction({});
       setSharedDrives(response.drives);
     } catch (err) {
-      setError("Failed to load shared drives");
+      if (locationMode === "shared_only") {
+        setError("Failed to load shared drives");
+      } else {
+        setSharedDrivesError(
+          "Couldn't load shared drives. You can still browse My Drive.",
+        );
+        setSharedDrives([]);
+      }
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [listSharedDrivesAction]);
+  }, [listSharedDrivesAction, locationMode]);
 
   const loadFolder = useCallback(
-    async (folderId: string, driveId?: string) => {
+    async (
+      folderId: string,
+      source: "my_drive" | "shared_drive",
+      driveId?: string,
+    ) => {
       setIsLoading(true);
       setError(null);
       try {
@@ -85,6 +108,8 @@ export function DriveBrowser({
           icon_link: item.iconLink,
           thumbnail_link: item.thumbnailLink,
           parents: item.parents,
+          source,
+          driveId,
         }));
         setItems(transformedItems);
         setBreadcrumbs(response.breadcrumbs);
@@ -101,6 +126,8 @@ export function DriveBrowser({
           icon_link: null,
           thumbnail_link: null,
           parents: null,
+          source,
+          driveId,
         });
       } catch (err) {
         setError("Failed to load folder contents");
@@ -118,53 +145,55 @@ export function DriveBrowser({
       loadSharedDrives();
       setBreadcrumbs([]);
       setItems([]);
+      setCurrentFolder(null);
     } else {
-      loadFolder(viewState.folderId, viewState.driveId);
+      loadFolder(viewState.folderId, viewState.source, viewState.driveId);
     }
   }, [viewState, loadSharedDrives, loadFolder]);
 
+  const handleMyDriveSelect = () => {
+    setViewState({
+      type: "folder",
+      folderId: "root",
+      source: "my_drive",
+      rootId: "root",
+      rootName: "My Drive",
+    });
+  };
+
   // Navigate to a shared drive root
   const handleDriveSelect = (drive: SharedDrive) => {
-    setCurrentDriveId(drive.id);
-    setCurrentDriveName(drive.name);
-    setViewState({ type: "folder", folderId: drive.id, driveId: drive.id });
+    setViewState({
+      type: "folder",
+      folderId: drive.id,
+      source: "shared_drive",
+      driveId: drive.id,
+      rootId: drive.id,
+      rootName: drive.name,
+    });
   };
 
   // Navigate to a folder
   const handleFolderClick = (item: DriveItem) => {
-    if (item.is_folder) {
-      setViewState({
-        type: "folder",
-        folderId: item.id,
-        driveId: currentDriveId,
-      });
-    }
+    if (!item.is_folder || viewState.type !== "folder") return;
+    setViewState({
+      ...viewState,
+      folderId: item.id,
+    });
   };
 
   // Navigate via breadcrumb
   const handleBreadcrumbClick = (crumb: DriveBreadcrumb, index: number) => {
-    // If clicking on a breadcrumb, navigate to that folder
-    if (index === 0 && currentDriveId) {
-      // First breadcrumb is the drive root
-      setViewState({
-        type: "folder",
-        folderId: currentDriveId,
-        driveId: currentDriveId,
-      });
-    } else {
-      setViewState({
-        type: "folder",
-        folderId: crumb.id,
-        driveId: currentDriveId,
-      });
-    }
+    if (viewState.type !== "folder") return;
+    setViewState({
+      ...viewState,
+      folderId: index === 0 ? viewState.rootId : crumb.id,
+    });
   };
 
   // Go back to drives list
   const handleBackToDrives = () => {
     setViewState({ type: "drives" });
-    setCurrentDriveId(undefined);
-    setCurrentDriveName("");
   };
 
   // Handle item selection (for folders that can be selected)
@@ -223,7 +252,11 @@ export function DriveBrowser({
           onClick={() =>
             viewState.type === "drives"
               ? loadSharedDrives()
-              : loadFolder(viewState.folderId, viewState.driveId)
+              : loadFolder(
+                  viewState.folderId,
+                  viewState.source,
+                  viewState.driveId,
+                )
           }
         >
           <ArrowClockwise className="h-4 w-4 mr-2" />
@@ -235,6 +268,61 @@ export function DriveBrowser({
 
   // Shared drives view
   if (viewState.type === "drives") {
+    if (locationMode === "my_and_shared") {
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground border-b pb-3">
+            <HardDrives className="h-4 w-4" weight="duotone" />
+            <span>Select Drive Location</span>
+          </div>
+
+          <button
+            onClick={handleMyDriveSelect}
+            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left w-full"
+          >
+            <House className="h-5 w-5 text-primary" weight="duotone" />
+            <span className="font-medium">My Drive</span>
+          </button>
+
+          {sharedDrivesError && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex items-center gap-2">
+              <Warning className="h-4 w-4 shrink-0" weight="duotone" />
+              <span>{sharedDrivesError}</span>
+            </div>
+          )}
+
+          {sharedDrives.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                Shared Drives
+              </p>
+              <div className="grid gap-2">
+                {sharedDrives.map((drive) => (
+                  <button
+                    key={drive.id}
+                    onClick={() => handleDriveSelect(drive)}
+                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left w-full"
+                  >
+                    <HardDrives
+                      className="h-5 w-5 text-primary"
+                      weight="duotone"
+                    />
+                    <span className="font-medium">{drive.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sharedDrives.length === 0 && !sharedDrivesError && (
+            <p className="text-xs text-muted-foreground">
+              No shared drives found. You can still browse My Drive.
+            </p>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground border-b pb-3">
@@ -288,12 +376,14 @@ export function DriveBrowser({
           variant="ghost"
           size="xs"
           onClick={() =>
-            currentDriveId &&
-            handleBreadcrumbClick({ id: currentDriveId, name: currentDriveName }, 0)
+            handleBreadcrumbClick(
+              { id: viewState.rootId, name: viewState.rootName },
+              0,
+            )
           }
           className="shrink-0"
         >
-          {currentDriveName || "Drive"}
+          {viewState.rootName}
         </Button>
 
         {breadcrumbs.slice(1).map((crumb, index) => (
