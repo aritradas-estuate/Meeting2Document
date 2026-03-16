@@ -28,7 +28,7 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey });
 };
 
-const SYNTHESIS_MODEL = process.env.MODEL_SYNTHESIS || "gpt-5.2";
+const SYNTHESIS_MODEL = process.env.MODEL_SYNTHESIS || "gpt-5.4";
 
 async function verifyGenerationOwnership(ctx: any, generationId: any) {
   const userId = await getAuthUserId(ctx);

@@ -29,9 +29,9 @@ const getAnthropicClient = () => {
 };
 
 const WRITER_MODEL =
-  process.env.MODEL_SECTION_WRITER || "claude-sonnet-4-20250514";
+  process.env.MODEL_SECTION_WRITER || "claude-opus-4-6";
 const REVIEWER_MODEL =
-  process.env.MODEL_SECTION_REVIEWER || "claude-sonnet-4-20250514";
+  process.env.MODEL_SECTION_REVIEWER || "claude-opus-4-6";
 const MAX_ITERATIONS = parseInt(process.env.MAX_REVIEW_ITERATIONS || "3", 10);
 
 const MAX_RETRIES = 5;

@@ -7,7 +7,8 @@ TypeScript backend powered by Convex for AI-powered document generation from mee
 - **Backend**: Convex (database, functions, scheduling)
 - **Auth**: Clerk with Google OAuth
 - **Transcription**: AssemblyAI
-- **Extraction**: OpenAI GPT-4o with structured outputs
+- **Extraction & synthesis**: OpenAI GPT-5.4 with structured outputs
+- **Section generation**: Claude Opus 4.6
 - **Storage**: Google Drive API
 
 ## Prerequisites
@@ -18,14 +19,15 @@ TypeScript backend powered by Convex for AI-powered document generation from mee
 - Google Cloud project with OAuth credentials
 - AssemblyAI API key
 - OpenAI API key
+- Anthropic API key
 
 ## Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
-cd backend_JS
-npm install
+cd Backend
+bun install
 ```
 
 ### 2. Set Up Clerk
@@ -59,6 +61,8 @@ Copy `.env.example` to `.env.local` and fill in your values:
 cp .env.example .env.local
 ```
 
+Use the `MODEL_*` variables in `.env.local` to change AI models without editing code.
+
 ### 5. Initialize Convex
 
 ```bash
@@ -73,19 +77,32 @@ This will:
 
 ### 6. Configure Convex Dashboard
 
-In the Convex dashboard, add these environment variables:
+Set the same backend environment variables in Convex for each deployment, either in the dashboard or with the CLI:
+- `npx convex env set --from-file .env.convex`
+- `npx convex env set --prod --from-file .env.convex`
+
+Required backend environment variables:
 - `CLERK_JWT_ISSUER_DOMAIN`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `ASSEMBLYAI_API_KEY`
 - `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY` (required for section generation)
+- `MODEL_EXTRACTION`
+- `MODEL_SYNTHESIS`
+- `MODEL_SECTION_WRITER`
+- `MODEL_SECTION_REVIEWER`
 - `WEBHOOK_SECRET` (required for webhook processing)
 - `REDIRECT_ALLOWED_ORIGINS` (comma-separated redirect origin allowlist)
+
+Recommended workflow:
+- Use `.env.local` for local development.
+- Keep a deployment-specific env file such as `.env.convex` if you want to sync values with `npx convex env set --from-file ...` without including local-only variables.
 
 ## Project Structure
 
 ```
-backend_JS/
+Backend/
 ├── convex/
 │   ├── _generated/           # Auto-generated Convex files
 │   ├── schema.ts             # Database schema
@@ -169,9 +186,10 @@ api.actions.drive.getFile
 2. **Make Public** - Files temporarily made public on Drive
 3. **Transcribe** - AssemblyAI processes audio (webhook notification)
 4. **Fallback Poll** - If no webhook after 15 min, poll for status
-5. **Extract** - OpenAI GPT-4o extracts structured information
-6. **Revoke Access** - Public access removed from files
-7. **Complete** - Results stored, UI updates in real-time
+5. **Extract** - OpenAI GPT-5.4 extracts structured information
+6. **Generate Sections** - Claude Opus 4.6 writes and reviews document sections
+7. **Revoke Access** - Public access removed from files
+8. **Complete** - Results stored, UI updates in real-time
 
 ## Development Commands
 

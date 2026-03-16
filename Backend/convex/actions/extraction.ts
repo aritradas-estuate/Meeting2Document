@@ -15,7 +15,7 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey });
 };
 
-const EXTRACTION_MODEL = process.env.MODEL_EXTRACTION || "gpt-5.2";
+const EXTRACTION_MODEL = process.env.MODEL_EXTRACTION || "gpt-5.4";
 
 export const extractSingle = internalAction({
   args: {
